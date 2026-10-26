@@ -2,7 +2,7 @@
 
 A full-stack web application for digital bank client onboarding, developed as part of a university project. 
 
-The application aims to provide a structured onboarding process where customers can submit personal information and track their application status.
+The application aims to provide a structured onboarding process where onboarding officers enter client information, receive a risk assessment, and accept or reject the client. Agreed risk rules may also trigger an automatic rejection.
 
 ---
 
@@ -20,7 +20,7 @@ The application aims to provide a structured onboarding process where customers 
 | **Docker** | Containerization |
 | **Docker Compose** | Multi-container orchestration |
 
-> **Note:** The backend uses Python and Psycopg to communicate directly with PostgreSQL via plain SQL. SQLAlchemy and Alembic are intentionally not used.
+> **Note:** The backend is planned to use Python and Psycopg to communicate directly with PostgreSQL via plain SQL. SQLAlchemy and Alembic are intentionally not used.
 
 ---
 
@@ -41,19 +41,27 @@ FloppyDisk/
 │   │   ├── package.json
 │   │   └── README.md
 │   │
-│   └── api/
+│   ├── api/
+│   │   ├── app/
+│   │   │   ├── core/
+│   │   │   │   └── config.py
+│   │   │   ├── db/
+│   │   │   │   └── connection.py
+│   │   │   ├── routes/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── health.py
+│   │   │   ├── main.py
+│   │   │   └── router.py
+│   │   ├── tests/
+│   │   ├── .env
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   │
+│   └── critical/
 │       ├── app/
-│       │   ├── core/
-│       │   │   └── config.py
-│       │   ├── db/
-│       │   │   └── connection.py
-│       │   ├── routes/
-│       │   │   ├── __init__.py
-│       │   │   └── health.py
 │       │   ├── main.py
-│       │   └── router.py
-│       ├── tests/
-│       ├── .env
+│       │   ├── router.py
+│       │   └── scoring.py
 │       ├── Dockerfile
 │       └── requirements.txt
 │
@@ -64,6 +72,8 @@ FloppyDisk/
 ```
 
 *Additional folders can be introduced as the project grows.*
+
+The frontend/backend tree includes planned folders. The new `critical` service currently contains `main.py`, `router.py`, and the empty `scoring.py` placeholder.
 
 ---
 
@@ -78,8 +88,8 @@ localhost:5173
    |
    | HTTP / JSON
    v
-FastAPI
-localhost:8000
+FastAPI --------------------> Risk Calculator
+localhost:8000   HTTP / JSON   critical:8000 (Docker network)
    |
    | Psycopg
    v
@@ -87,9 +97,17 @@ PostgreSQL
 localhost:5432
 ```
 
-The frontend communicates with the backend through HTTP requests. The backend validates requests, implements business logic, and executes SQL queries against PostgreSQL.
+The frontend will communicate with the backend through HTTP requests. The backend will validate requests, call the risk calculator, implement business logic, and execute SQL queries against PostgreSQL.
 
 The frontend **never** connects directly to the database.
+
+The risk calculator runs as a separate Docker Compose service named `critical`:
+
+- `main.py` creates the FastAPI application and registers the router.
+- `router.py` defines HTTP endpoints, currently `GET /health`.
+- `scoring.py` will contain the risk calculation rules and is currently empty.
+
+The backend and risk calculator can both use port `8000` because they run in separate containers. The risk calculator does not publish a host port. Its health endpoint is reachable from the API container, but scoring and the backend's scoring integration are not implemented yet.
 
 ---
 
@@ -124,7 +142,8 @@ APP_ENV=development
 ```
 - The hostname `db` is used when the backend runs inside Docker Compose.
 - When running the backend directly on your computer (outside Docker), replace `db` with `localhost`.
-- `DATABASE_URL` is a connection string that the Python application reads from its environment to establish a connection using Psycopg.
+- `DATABASE_URL` is a connection string that the Python application will read from its environment to establish a connection using Psycopg.
+- Docker Compose also sets `RISK_SERVICE_URL=http://critical:8000` for the backend. This is the address the backend will use to call the risk calculator.
 
 ### Frontend `.env`
 **Location:** `FloppyDisk/apps/web/.env`
@@ -135,6 +154,10 @@ VITE_API_URL=http://localhost:8000/api
 *This tells the frontend where to find the backend API.*
 
 > ⚠️ **Security Warning:** Never put database passwords or secrets in frontend environment variables. Variables prefixed with `VITE_` are exposed to the browser. Do not commit real `.env` files to Git; use `.env.example` files containing placeholder values for teammates.
+
+### Risk Calculator
+
+The `critical` service does not currently need a `.env` file. Its Docker Compose configuration has no `env_file` entry.
 
 ---
 
@@ -168,6 +191,7 @@ View logs for a specific service:
 ```bash
 docker compose logs -f web
 docker compose logs -f api
+docker compose logs -f critical
 docker compose logs -f db
 ```
 
@@ -184,15 +208,32 @@ docker compose logs -f db
 | **Health Check** | [http://localhost:8000/api/health](http://localhost:8000/api/health) | API health endpoint |
 | **API Root** | [http://localhost:8000/](http://localhost:8000/) | API welcome endpoint |
 | **PostgreSQL** | `localhost:5432` | Database connection point |
+| **Risk Calculator Health** | `http://critical:8000/health` | Docker network only; not directly accessible from the host browser |
 
 > **Note:** PostgreSQL is a database service, not a web server. Connect to it through the backend or a database client (e.g., DBeaver, pgAdmin).  
 > The API health endpoint confirms that the FastAPI server responds; it does not guarantee PostgreSQL connectivity.
+
+### Testing the Risk Calculator
+
+From the project root, send a request from inside the API container:
+
+```bash
+docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://critical:8000/health', timeout=5).read().decode())"
+```
+
+Expected response:
+
+```json
+{"status":"ok","service":"risk_calculator"}
+```
+
+This confirms that the risk service responds across Docker's network. It does not test risk calculation or database access.
 
 ---
 
 ## Running Without Docker
 
-You can run the frontend and backend directly on your machine while keeping PostgreSQL inside Docker.
+You can run the frontend, backend, and risk calculator directly on your machine while keeping PostgreSQL inside Docker.
 
 ### Start Database Only
 From the project root:
@@ -213,9 +254,25 @@ cd apps/api
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --env-file .env
 ```
 *(Remember to set `DATABASE_URL` to use `localhost:5432` in `apps/api/.env` when running outside Docker).*
+
+### Risk Calculator
+
+In a separate terminal, starting from the project root:
+
+```bash
+cd apps/critical
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8001
+```
+
+When both Python services run directly on your computer, use a different port for each. The risk calculator's health endpoint is then [http://localhost:8001/health](http://localhost:8001/health).
+
+For this local setup, add `RISK_SERVICE_URL=http://localhost:8001` to `apps/api/.env`. The backend's `--env-file .env` option loads the file; the application will use this address once scoring integration is implemented.
 
 ---
 
@@ -232,8 +289,12 @@ Run all commands from the project root:
 | `docker compose logs -f` | Follow combined logs |
 | `docker compose restart api` | Restart backend service |
 | `docker compose restart web` | Restart frontend service |
+| `docker compose restart critical` | Restart risk calculator service |
 | `docker compose build api` | Build backend Docker image |
 | `docker compose build web` | Build frontend Docker image |
+| `docker compose build critical` | Build risk calculator Docker image |
+
+The Python services copy their code into their Docker images. Rebuild and recreate the affected service after source or dependency changes; restarting alone does not include those changes.
 
 > ⚠️ **Warning:** Running `docker compose down -v` will remove named volumes and **permanently delete** your local PostgreSQL data.
 
@@ -241,7 +302,7 @@ Run all commands from the project root:
 
 ## Database Access & Guidelines
 
-The backend connects to PostgreSQL using `psycopg`. Database operations are executed using raw parameterized SQL statements rather than an ORM.
+The backend will connect to PostgreSQL using `psycopg`. Database operations will use raw parameterized SQL statements rather than an ORM. This integration is not implemented in the current skeleton.
 
 ### Example Connection
 ```python
@@ -254,8 +315,8 @@ def get_connection():
 
 ### Best Practices
 - **Parameterized Queries:** Always use parameterized SQL queries for user-supplied values to prevent SQL injection. Never concatenate raw strings into SQL queries.
-- **Database Migrations:** Schema changes are managed using version-controlled SQL scripts.
-- **Dependencies:** Required Python packages are declared in `requirements.txt` (including `fastapi`, `uvicorn`, and `psycopg`).
+- **Database Migrations:** Schema changes should be managed using version-controlled SQL scripts.
+- **Dependencies:** Each Python service has its own `requirements.txt`, currently containing `fastapi` and `uvicorn[standard]`. Add `psycopg` to the backend when implementing database access.
 
 ---
 
@@ -277,12 +338,18 @@ This project is under active development as part of a university assignment.
 **Current Setup:**
 - [x] React + Vite frontend bootstrap.
 - [x] Python + FastAPI backend setup.
-- [x] PostgreSQL integration with Psycopg.
+- [x] PostgreSQL container configuration.
+- [ ] PostgreSQL integration with Psycopg.
 - [x] Dockerfile configurations for all services.
 - [x] Docker Compose local orchestration.
 - [x] API health check endpoint.
+- [x] Separate risk calculator service with a health check endpoint.
+- [x] Manual connectivity check from the API container to the risk calculator.
 
 **Upcoming Features:**
+- Risk scoring rules and scoring endpoint.
+- Backend integration with the risk calculator.
+- Risk-service timeout and failure handling.
 - Authentication & authorization.
 - Multi-step onboarding workflows.
 - Document upload and verification management.
