@@ -24,6 +24,13 @@ services:
       - "8000:8000"
     env_file:
       - ./apps/api/.env
+    environment:
+      RISK_SERVICE_URL: http://critical:8000
+    restart: unless-stopped
+  critical:
+    build:
+      context: ./apps/critical
+      dockerfile: Dockerfile
     restart: unless-stopped
   db:
     image: postgres:17
