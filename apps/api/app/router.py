@@ -1,14 +1,15 @@
 from fastapi import APIRouter
 
+from models.model import HealthCheckResponse
 router = APIRouter()
 
 
-@router.get("/health", tags=["Health"])
-def health_check():
-    return {
-        "status": "ok",
-        "service": "bank-onboarding-api",
-    }
+@router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
+def health_check() -> HealthCheckResponse:
+    return HealthCheckResponse(
+        status="ok",
+        service="bank-onboarding-api",
+    )
 
 
 @router.post("/v1/clients", tags=["Clients"])
