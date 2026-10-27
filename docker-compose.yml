@@ -25,12 +25,15 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
-      RISK_SERVICE_URL: http://critical:8000
+      RISK_SERVICE_URL: http://critical:2424
     restart: unless-stopped
   critical:
     build:
       context: ./apps/critical
       dockerfile: Dockerfile
+    container_name: bank-onboarding-critical
+    ports:
+      - "2424:8000"
     restart: unless-stopped
   db:
     image: postgres:17
