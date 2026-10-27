@@ -25,7 +25,7 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
-      RISK_SERVICE_URL: http://critical:2424
+      RISK_SERVICE_URL: http://critical:8000
     restart: unless-stopped
   critical:
     build:
@@ -55,4 +55,3 @@ services:
 
 volumes:
   postgres_data:
-

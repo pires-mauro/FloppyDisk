@@ -1,6 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from models.model import HealthCheckResponse
+from models.risk import RiskReviewRequest, RiskReviewResponse
+
 router = APIRouter()
 
 
@@ -9,6 +11,14 @@ def health_check() -> HealthCheckResponse:
     return HealthCheckResponse(
         status="ok",
         service="bank-onboarding-api",
+    )
+
+
+@router.post("/v1/risk/evaluation", tags=["Risk"])
+def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
+    raise HTTPException(
+        status_code=501,
+        detail="Risk scoring is not available yet. The database integration has not been implemented.",
     )
 
 
