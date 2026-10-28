@@ -1,10 +1,23 @@
 import type { Country, ClientForm } from './types'
 
-export const testCountries: Country[] = [
-  { code: 'LU', name: 'Luxembourg' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'FR', name: 'France' },
-]
+const unMemberCountryCodes = `
+AF AL DZ AD AO AG AR AM AU AT AZ BS BH BD BB BY BE BZ BJ BT BO BA BW BR BN BG
+BF BI CV KH CM CA CF TD CL CN CO KM CG CD CR CI HR CU CY CZ KP DK DJ DM DO
+EC EG SV GQ ER EE SZ ET FJ FI FR GA GM GE DE GH GR GD GT GN GW GY HT HN HU
+IS IN ID IR IQ IE IL IT JM JP JO KZ KE KI KW KG LA LV LB LS LR LY LI LT LU
+MG MW MY MV ML MT MH MR MU MX FM MC MN ME MA MZ MM NA NR NP NL NZ NI NE NG
+MK NO OM PK PW PA PG PY PE PH PL PT QA KR MD RO RU RW KN LC VC WS SM ST SA
+SN RS SC SL SG SK SI SB SO ZA ES LK SD SS SR SE CH SY TJ TH TL TG TO TT TN TR
+TM TV UG UA AE GB TZ US UY UZ VU VE VN YE ZM ZW
+`
+  .trim()
+  .split(/\s+/)
+
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
+
+export const unCountries: Country[] = unMemberCountryCodes
+  .map((code) => ({ code, name: regionNames.of(code) ?? code }))
+  .sort((left, right) => left.name.localeCompare(right.name))
 
 export const incomeOptions = ['0-10k', '10k-50k', '50k-100k', '100k+']
 export const professionOptions = ['Standard', 'Cash-intensive', 'High-risk']
@@ -40,7 +53,10 @@ export const dialPrefixes = [
   '+996', '+998',
 ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
 
-export const requiredFields: (keyof ClientForm)[] = [
+export const requiredFields: Exclude<
+  keyof ClientForm,
+  'pepConfirmed' | 'sanctionsMatch'
+>[] = [
   'clientName',
   'dateOfBirth',
   'countryOfResidence',

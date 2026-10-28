@@ -79,7 +79,7 @@ export function validateForm(form: ClientForm): FieldErrors {
     errors.clientId = 'Enter no more than 100 characters.'
   }
   if (form.officerId && !/^\d{10}$/.test(form.officerId)) {
-    errors.officerId = 'Enter exactly 10 digits.'
+    errors.officerId = 'Officer ID must be exactly 10 digits.'
   }
   if (form.email && !isValidEmail(form.email.trim())) {
     errors.email = 'Enter a valid email address.'
@@ -92,9 +92,9 @@ export function validateForm(form: ClientForm): FieldErrors {
     if (!dateOfBirth) {
       errors.dateOfBirth = 'Enter a valid date in DD-MM-YYYY format.'
     } else if (toISODate(dateOfBirth) > getToday()) {
-      errors.dateOfBirth = 'Date of birth cannot be in the future.'
+      errors.dateOfBirth = 'Client must be at least 18 years of age.'
     } else if (!isAtLeastEighteen(dateOfBirth)) {
-      errors.dateOfBirth = 'The client must be at least 18 years old.'
+      errors.dateOfBirth = 'Client must be at least 18 years of age.'
     }
   }
   if (form.officerComment.length > 500) {

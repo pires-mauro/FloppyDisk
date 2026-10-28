@@ -19,6 +19,8 @@ export type ClientForm = {
   phoneNumber: string
   officerId: string
   officerComment: string
+  pepConfirmed: boolean
+  sanctionsMatch: boolean
 }
 
 export type FieldErrors = Partial<Record<keyof ClientForm, string>>
@@ -39,4 +41,6 @@ export const initialForm: ClientForm = {
   phoneNumber: '',
   officerId: '',
   officerComment: '',
+  pepConfirmed: false,
+  sanctionsMatch: false,
 }

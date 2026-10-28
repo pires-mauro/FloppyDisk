@@ -1,10 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ClientProfileSection } from './components/ClientProfileSection'
 import { ContactSection } from './components/ContactSection'
+import { ClientViewing } from './components/ClientViewing'
 import { FinancialSection } from './components/FinancialSection'
 import { OfficerSection } from './components/OfficerSection'
 import { RiskReview } from './components/RiskReview'
-import { testCountries } from './form/options'
+import { RiskPreview } from './components/RiskPreview'
+import { WeightViewing } from './components/WeightViewing'
+import { unCountries } from './form/options'
 import { initialForm, type ClientForm, type Country } from './form/types'
 import { validateForm } from './form/validation'
 import './App.css'
@@ -17,8 +20,18 @@ function App() {
   const [countriesRetry, setCountriesRetry] = useState(0)
   const [submitted, setSubmitted] = useState(false)
   const [step, setStep] = useState<'details' | 'risk'>('details')
-  const errors = submitted ? validateForm(form) : {}
+  const [activeTab, setActiveTab] = useState<'onboarding' | 'clients' | 'weights'>(
+    'onboarding',
+  )
+  const [duplicateError, setDuplicateError] = useState('')
+  const [duplicateChecking, setDuplicateChecking] = useState(false)
+  const validationErrors = validateForm(form)
+  const errors = validationErrors
   const errorCount = Object.keys(errors).length
+  const canContinue =
+    Object.keys(validationErrors).length === 0 &&
+    !countriesLoading &&
+    !duplicateChecking
 
   useEffect(() => {
     const controller = new AbortController()
@@ -77,7 +90,7 @@ function App() {
         )
       } catch (error) {
         if (controller.signal.aborted) return
-        setCountries(testCountries)
+        setCountries(unCountries)
         setCountriesError(
           error instanceof Error
             ? error.message
@@ -94,17 +107,72 @@ function App() {
 
   function updateField(field: keyof ClientForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }))
+    setDuplicateError('')
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function updateRiskFlag(
+    field: 'pepConfirmed' | 'sanctionsMatch',
+    value: boolean,
+  ) {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitted(true)
+    setDuplicateError('')
 
-    const validationErrors = validateForm(form)
     if (Object.keys(validationErrors).length > 0) {
       const firstInvalidField = Object.keys(validationErrors)[0]
       document.getElementById(firstInvalidField)?.focus()
       return
+    }
+
+    if (form.clientId.trim()) {
+      setDuplicateChecking(true)
+      try {
+        const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+        const query = new URLSearchParams({
+          clientId: form.clientId.trim(),
+          issuingCountry: form.idIssuingCountry,
+        })
+        const response = await fetch(
+          `${apiUrl}/v1/clients/check-duplicate?${query.toString()}`,
+        )
+        if (!response.ok) {
+          throw new Error(`Duplicate-client check failed (${response.status}).`)
+        }
+
+        const result: unknown = await response.json()
+        if (
+          result !== null &&
+          typeof result === 'object' &&
+          'exists' in result &&
+          result.exists === true
+        ) {
+          setDuplicateError(
+            'A client record with this ID Number and Issuing Country already exists.',
+          )
+          return
+        }
+        if (
+          result === null ||
+          typeof result !== 'object' ||
+          !('exists' in result) ||
+          result.exists !== false
+        ) {
+          throw new Error('The duplicate-client check returned an invalid response.')
+        }
+      } catch (requestError) {
+        setDuplicateError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'Could not verify whether this client already exists.',
+        )
+        return
+      } finally {
+        setDuplicateChecking(false)
+      }
     }
 
     setStep('risk')
@@ -117,6 +185,7 @@ function App() {
   }
 
   const isRiskStep = step === 'risk'
+  const isOnboarding = activeTab === 'onboarding'
 
   return (
     <main className="page-shell">
@@ -133,6 +202,39 @@ function App() {
         </div>
       </header>
 
+      <nav className="primary-tabs" aria-label="Main navigation">
+        <button
+          type="button"
+          className="primary-tab"
+          aria-current={activeTab === 'onboarding' ? 'page' : undefined}
+          onClick={() => setActiveTab('onboarding')}
+        >
+          New client
+        </button>
+        <button
+          type="button"
+          className="primary-tab"
+          aria-current={activeTab === 'clients' ? 'page' : undefined}
+          onClick={() => setActiveTab('clients')}
+        >
+          Client viewing
+        </button>
+        <button
+          type="button"
+          className="primary-tab"
+          aria-current={activeTab === 'weights' ? 'page' : undefined}
+          onClick={() => setActiveTab('weights')}
+        >
+          Weight viewing
+        </button>
+      </nav>
+
+      {!isOnboarding && activeTab === 'clients' && <ClientViewing />}
+      {!isOnboarding && activeTab === 'weights' && (
+        <WeightViewing countries={countries} />
+      )}
+
+      {isOnboarding && <>
       <section className="intro">
         <div className="eyebrow">
           <span className="eyebrow-line" /> CLIENT SERVICES
@@ -159,10 +261,10 @@ function App() {
           <div className="country-fallback" role="status">
             <span className="fallback-icon" aria-hidden="true">i</span>
             <div>
-              <strong>Using test countries</strong>
+              <strong>Using built-in UN member countries</strong>
               <p>
                 The countries endpoint is unavailable ({countriesError}).
-                Luxembourg, Germany, and France are available for testing.
+              The built-in UN member list is being used instead.
               </p>
               <button
                 type="button"
@@ -202,7 +304,19 @@ function App() {
           onChange={updateField}
         />
         <ContactSection form={form} errors={errors} onChange={updateField} />
-        <OfficerSection form={form} errors={errors} onChange={updateField} />
+        <OfficerSection
+          form={form}
+          errors={errors}
+          onChange={updateField}
+          onRiskFlagChange={updateRiskFlag}
+        />
+        <RiskPreview client={form} countries={countries} />
+        {duplicateError && (
+          <div className="data-view-alert data-view-alert-error" role="alert">
+            <strong>Could not continue onboarding</strong>
+            <span>{duplicateError}</span>
+          </div>
+        )}
 
         <footer className="form-footer">
           <p className="required-note"><span className="required-mark">*</span> Required fields</p>
@@ -210,15 +324,23 @@ function App() {
             <button type="button" className="button-secondary" onClick={handleReset}>
               Clear form
             </button>
-            <button type="submit" className="button-primary">
-              Continue to risk review <span aria-hidden="true">→</span>
+            <button type="submit" className="button-primary" disabled={!canContinue}>
+              {duplicateChecking
+                ? 'Checking client…'
+                : 'Continue to risk review'}
+              {!duplicateChecking && <span aria-hidden="true">→</span>}
             </button>
           </div>
         </footer>
       </form>}
       {isRiskStep && (
-        <RiskReview client={form} onBack={() => setStep('details')} />
+        <RiskReview
+          client={form}
+          countries={countries}
+          onBack={() => setStep('details')}
+        />
       )}
+      </>}
     </main>
   )
 }

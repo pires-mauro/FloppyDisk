@@ -6,12 +6,17 @@ type OfficerSectionProps = {
   form: ClientForm
   errors: FieldErrors
   onChange: (field: keyof ClientForm, value: string) => void
+  onRiskFlagChange: (
+    field: 'pepConfirmed' | 'sanctionsMatch',
+    value: boolean,
+  ) => void
 }
 
 export function OfficerSection({
   form,
   errors,
   onChange,
+  onRiskFlagChange,
 }: OfficerSectionProps) {
   return (
     <FormSection
@@ -76,6 +81,29 @@ export function OfficerSection({
           }
         />
       </FormField>
+      <div className="risk-flag-fields" role="group" aria-labelledby="risk-flags-label">
+        <p id="risk-flags-label">PEP & sanctions screening</p>
+        <label className="risk-flag-option">
+          <input
+            type="checkbox"
+            checked={form.pepConfirmed}
+            onChange={(event) =>
+              onRiskFlagChange('pepConfirmed', event.target.checked)
+            }
+          />
+          <span>Politically exposed person (PEP) confirmed</span>
+        </label>
+        <label className="risk-flag-option">
+          <input
+            type="checkbox"
+            checked={form.sanctionsMatch}
+            onChange={(event) =>
+              onRiskFlagChange('sanctionsMatch', event.target.checked)
+            }
+          />
+          <span>Sanctions list match</span>
+        </label>
+      </div>
     </FormSection>
   )
 }

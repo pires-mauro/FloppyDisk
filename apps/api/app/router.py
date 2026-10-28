@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from models.model import HealthCheckResponse
-from models.risk import RiskReviewRequest, RiskReviewResponse
+from models.risk import RiskReviewRequest, RiskReviewResponse, WeightUpdateRequest
 
 router = APIRouter()
 
@@ -29,6 +29,14 @@ def post_client():
     }
 
 
+@router.get("/v1/clients", tags=["Clients"])
+def list_clients():
+    raise HTTPException(
+        status_code=501,
+        detail="Client listing is not available yet. The database integration has not been implemented.",
+    )
+
+
 @router.get("/v1/clients/{client_id}", tags=["Clients"])
 def get_client(client_id: str):
     return {
@@ -50,11 +58,20 @@ def delete_client(client_id: str):
     }
 
 
+@router.get("/v1/weights/latest", tags=["Weights"])
+def get_latest_weights():
+    raise HTTPException(
+        status_code=501,
+        detail="Weight retrieval is not available yet. The database integration has not been implemented.",
+    )
+
+
 @router.post("/v1/weights", tags=["Weights"])
-def post_weights():
-    return {
-        "message": "Weights created successfully",
-    }
+def post_weights(request: WeightUpdateRequest):
+    raise HTTPException(
+        status_code=501,
+        detail="Weight updates are not available yet. The database integration has not been implemented.",
+    )
 
 
 @router.get("/v1/weights/{version}", tags=["Weights"])
