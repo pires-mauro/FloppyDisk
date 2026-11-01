@@ -316,7 +316,7 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 ## Database Access & Guidelines
 
-The backend will connect to PostgreSQL using `psycopg`. Database operations will use raw parameterized SQL statements rather than an ORM. This integration is not implemented in the current skeleton.
+The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. The weight configuration endpoint creates its configuration table when first accessed. Weight submissions can update weights or risk values independently; risk-value submissions merge only the submitted choices, and `null` explicitly removes a choice. Other database integrations remain unimplemented.
 
 ### Example Connection
 ```python
@@ -330,7 +330,7 @@ def get_connection():
 ### Best Practices
 - **Parameterized Queries:** Always use parameterized SQL queries for user-supplied values to prevent SQL injection. Never concatenate raw strings into SQL queries.
 - **Database Migrations:** Schema changes should be managed using version-controlled SQL scripts.
-- **Dependencies:** Each Python service has its own `requirements.txt`, currently containing `fastapi` and `uvicorn[standard]`. Add `psycopg` to the backend when implementing database access.
+- **Dependencies:** Each Python service has its own `requirements.txt`; the API uses `fastapi`, `uvicorn[standard]`, and `psycopg[binary]`.
 
 ---
 

@@ -1,9 +1,14 @@
+import logging
+
+import psycopg
 from fastapi import APIRouter, HTTPException
 
 from models.model import HealthCheckResponse
 from models.risk import RiskReviewRequest, RiskReviewResponse, WeightUpdateRequest
+from app.weight_store import get_latest_weights as read_latest_weights, update_weights
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
@@ -60,18 +65,36 @@ def delete_client(client_id: str):
 
 @router.get("/v1/weights/latest", tags=["Weights"])
 def get_latest_weights():
-    raise HTTPException(
-        status_code=501,
-        detail="Weight retrieval is not available yet. The database integration has not been implemented.",
-    )
+    try:
+        configuration = read_latest_weights()
+    except (psycopg.Error, RuntimeError) as error:
+        logger.exception("Could not retrieve the latest weight configuration.")
+        raise HTTPException(
+            status_code=503,
+            detail="Weight storage is unavailable.",
+        ) from error
+
+    return configuration or {
+        "version": "Draft",
+        "weights": {},
+        "risk_values": {},
+    }
 
 
 @router.post("/v1/weights", tags=["Weights"])
 def post_weights(request: WeightUpdateRequest):
-    raise HTTPException(
-        status_code=501,
-        detail="Weight updates are not available yet. The database integration has not been implemented.",
-    )
+    try:
+        return update_weights(
+            request.employee_id,
+            request.weights,
+            request.risk_values,
+        )
+    except (psycopg.Error, RuntimeError) as error:
+        logger.exception("Could not update the weight configuration.")
+        raise HTTPException(
+            status_code=503,
+            detail="Weight storage is unavailable.",
+        ) from error
 
 
 @router.get("/v1/weights/{version}", tags=["Weights"])

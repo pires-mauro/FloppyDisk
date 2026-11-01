@@ -15,6 +15,18 @@ type WeightValues = Record<RiskFactor, string>
 type RiskValueChoice = { value: string; label: string }
 type RiskValueOptions = Record<RiskFactor, RiskValueChoice[]>
 type RiskValueValues = Record<RiskFactor, Record<string, string>>
+type CountryRiskEntry = { country: string; risk: string }
+type CountryRiskFactor =
+  | 'country_weight'
+  | 'nationality_weight'
+  | 'tax_domicile_weight'
+type CountryRiskEntryLists = Record<CountryRiskFactor, CountryRiskEntry[]>
+
+const countryRiskFactors: CountryRiskFactor[] = [
+  'country_weight',
+  'nationality_weight',
+  'tax_domicile_weight',
+]
 
 const emptyWeights = Object.fromEntries(
   riskFactors.map(([key]) => [key, '']),
@@ -45,6 +57,23 @@ function createEmptyRiskValues(options: RiskValueOptions): RiskValueValues {
   ) as RiskValueValues
 }
 
+function getCountryRiskEntries(
+  riskValues: RiskValueValues,
+): CountryRiskEntryLists {
+  return Object.fromEntries(
+    countryRiskFactors.map((factor) => [
+      factor,
+      Object.entries(riskValues[factor])
+        .filter(([, risk]) => risk !== '')
+        .map(([country, risk]) => ({ country, risk })),
+    ]),
+  ) as CountryRiskEntryLists
+}
+
+function isCountryRiskFactor(key: RiskFactor): key is CountryRiskFactor {
+  return countryRiskFactors.some((factor) => factor === key)
+}
+
 function getApiUrl() {
   return (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
 }
@@ -56,7 +85,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseWeights(
   payload: unknown,
   options: RiskValueOptions,
-): { version: string; weights: WeightValues; riskValues: RiskValueValues } {
+): {
+  version: string
+  weights: WeightValues
+  riskValues: RiskValueValues
+  countryRiskEntries: CountryRiskEntryLists
+} {
   if (!isRecord(payload) || !('weights' in payload)) {
     throw new Error('The weights endpoint did not return a weights object.')
   }
@@ -103,7 +137,12 @@ function parseWeights(
     'version' in payload && typeof payload.version === 'string'
       ? payload.version
       : 'Current'
-  return { version, weights, riskValues }
+  return {
+    version,
+    weights,
+    riskValues,
+    countryRiskEntries: getCountryRiskEntries(riskValues),
+  }
 }
 
 async function getErrorMessage(response: Response) {
@@ -131,6 +170,8 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
   const [savedWeights, setSavedWeights] = useState<WeightValues | null>(null)
   const [riskValues, setRiskValues] = useState<RiskValueValues>(emptyRiskValues)
   const [savedRiskValues, setSavedRiskValues] = useState<RiskValueValues | null>(null)
+  const [countryRiskEntries, setCountryRiskEntries] =
+    useState<CountryRiskEntryLists>(() => getCountryRiskEntries(emptyRiskValues))
   const [version, setVersion] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -160,6 +201,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         setSavedWeights(configuration.weights)
         setRiskValues(configuration.riskValues)
         setSavedRiskValues(configuration.riskValues)
+        setCountryRiskEntries(configuration.countryRiskEntries)
         setVersion(configuration.version)
       } catch (requestError) {
         if (controller.signal.aborted) return
@@ -177,25 +219,58 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     return () => controller.abort()
   }, [retry, riskValueOptions])
 
-  const isComplete =
-    /^\d{10}$/.test(employeeId) &&
-    riskFactors.every(
-      ([key]) =>
-        weights[key] !== '' &&
-        riskValueOptions[key].every(
-          ({ value }) => riskValues[key][value] !== '',
-        ),
-    )
-  const hasChanges =
+  const isEmployeeIdValid = /^\d{10}$/.test(employeeId)
+  const isWeightComplete =
+    isEmployeeIdValid && riskFactors.every(([key]) => weights[key] !== '')
+  const hasWeightChanges =
     savedWeights === null ||
-    riskFactors.some(
-      ([key]) =>
-        weights[key] !== savedWeights[key] ||
-        riskValueOptions[key].some(
-          ({ value }) =>
-            riskValues[key][value] !== savedRiskValues?.[key][value],
+    riskFactors.some(([key]) => weights[key] !== savedWeights[key])
+  const currentRiskValues: RiskValueValues = {
+    ...riskValues,
+    ...Object.fromEntries(
+      countryRiskFactors.map((factor) => [
+        factor,
+        Object.fromEntries(
+          countryRiskEntries[factor]
+            .filter(({ country, risk }) => country && risk)
+            .map(({ country, risk }) => [country, risk]),
         ),
+      ]),
+    ),
+  }
+  const countryRiskEntriesValid = countryRiskFactors.every((factor) => {
+    const entries = countryRiskEntries[factor]
+    return (
+      entries.every(
+        ({ country, risk }) =>
+          (country === '' && risk === '') || (country !== '' && risk !== ''),
+      ) &&
+      new Set(
+        entries
+          .map(({ country }) => country)
+          .filter((country) => country !== ''),
+      ).size === entries.filter(({ country }) => country !== '').length
     )
+  })
+  const riskValueUpdates = Object.fromEntries(
+    riskFactors.flatMap(([factor]) => {
+      const current = currentRiskValues[factor]
+      const saved = savedRiskValues?.[factor] ?? {}
+      const choices = new Set([...Object.keys(current), ...Object.keys(saved)])
+      const updates = Object.fromEntries(
+        [...choices].flatMap((choice) => {
+          const currentValue = current[choice] || ''
+          const savedValue = saved[choice] || ''
+          if (currentValue === savedValue) return []
+          return [[choice, currentValue === '' ? null : Number(currentValue)]]
+        }),
+      )
+      return Object.keys(updates).length > 0 ? [[factor, updates]] : []
+    }),
+  ) as Record<string, Record<string, number | null>>
+  const hasRiskValueChanges = Object.keys(riskValueUpdates).length > 0
+  const canSubmitRiskValues =
+    isEmployeeIdValid && hasRiskValueChanges && countryRiskEntriesValid
 
   function updateWeight(field: RiskFactor, value: string) {
     setWeights((current) => ({ ...current, [field]: value }))
@@ -216,7 +291,46 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     setSaveError('')
   }
 
-  async function saveWeights() {
+  function updateCountryRiskEntry(
+    factor: CountryRiskFactor,
+    index: number,
+    field: keyof CountryRiskEntry,
+    value: string,
+  ) {
+    setCountryRiskEntries((current) =>
+      ({
+        ...current,
+        [factor]: current[factor].map((entry, entryIndex) =>
+          entryIndex === index ? { ...entry, [field]: value } : entry,
+        ),
+      }),
+    )
+    setSaveMessage('')
+    setSaveError('')
+  }
+
+  function addCountryRiskEntry(factor: CountryRiskFactor) {
+    setCountryRiskEntries((current) => ({
+      ...current,
+      [factor]: [...current[factor], { country: '', risk: '' }],
+    }))
+    setSaveMessage('')
+    setSaveError('')
+  }
+
+  function removeCountryRiskEntry(factor: CountryRiskFactor, index: number) {
+    setCountryRiskEntries((current) => ({
+      ...current,
+      [factor]: current[factor].filter((_, entryIndex) => entryIndex !== index),
+    }))
+    setSaveMessage('')
+    setSaveError('')
+  }
+
+  async function saveConfiguration(payload: {
+    weights?: Record<string, number>
+    risk_values?: Record<string, Record<string, number | null>>
+  }) {
     setSaving(true)
     setSaveMessage('')
     setSaveError('')
@@ -227,20 +341,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employee_id: employeeId,
-          weights: Object.fromEntries(
-            riskFactors.map(([key]) => [key, Number(weights[key])]),
-          ),
-          risk_values: Object.fromEntries(
-            riskFactors.map(([key]) => [
-              key,
-              Object.fromEntries(
-                riskValueOptions[key].map(({ value }) => [
-                  value,
-                  Number(riskValues[key][value]),
-                ]),
-              ),
-            ]),
-          ),
+          ...payload,
         }),
       })
 
@@ -248,9 +349,23 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         throw new Error(await getErrorMessage(response))
       }
 
-      setSavedWeights({ ...weights })
-      setSavedRiskValues(structuredClone(riskValues))
-      setSaveMessage('The API accepted the weight update.')
+      const result: unknown = await response.json()
+      if (
+        result !== null &&
+        typeof result === 'object' &&
+        'version' in result &&
+        typeof result.version === 'string'
+      ) {
+        setVersion(result.version)
+      }
+
+      if (payload.weights) {
+        setSavedWeights({ ...weights })
+        setSaveMessage('The API accepted the weight update.')
+      } else {
+        setSavedRiskValues(structuredClone(currentRiskValues))
+        setSaveMessage('The API accepted the risk value update.')
+      }
     } catch (requestError) {
       setSaveError(
         requestError instanceof Error
@@ -260,6 +375,20 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  function saveWeights() {
+    return saveConfiguration({
+      weights: Object.fromEntries(
+        riskFactors.map(([key]) => [key, Number(weights[key])]),
+      ),
+    })
+  }
+
+  function saveRiskValues() {
+    return saveConfiguration({
+      risk_values: riskValueUpdates,
+    })
   }
 
   return (
@@ -352,6 +481,24 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
           </div>
         )}
 
+        <label className="employee-id-field" htmlFor="weight-employee-id">
+          Employee internal ID
+          <input
+            id="weight-employee-id"
+            type="text"
+            inputMode="numeric"
+            maxLength={10}
+            pattern="[0-9]{10}"
+            value={employeeId}
+            onChange={(event) =>
+              setEmployeeId(event.target.value.replace(/\D/g, '').slice(0, 10))
+            }
+            placeholder="10 digits"
+            aria-describedby="weight-employee-id-hint"
+          />
+          <span id="weight-employee-id-hint">Required for the configuration audit log.</span>
+        </label>
+
         <div className="weight-editor-list">
           {riskFactors.map(([key, label], index) => (
             <label className="weight-editor-row" key={key} htmlFor={`weight-${key}`}>
@@ -371,73 +518,144 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
             </label>
           ))}
         </div>
+        <div className="weight-section-actions">
+          <button
+            type="button"
+            className="button-primary weight-save-button"
+            onClick={saveWeights}
+            disabled={!isWeightComplete || !hasWeightChanges || saving}
+          >
+            {saving ? 'Submitting…' : 'Submit weights'}
+          </button>
+        </div>
 
         <div className="risk-value-editor">
           <h4>Risk values by selectable choice</h4>
-          <p>Assign a risk score from 1 to 5 to every available choice.</p>
+          <p>Set risk scores only for the choices you want to add or change.</p>
           {riskFactors.map(([key, label]) => (
             <details className="risk-value-group" key={key}>
               <summary>{label} values</summary>
-              <div className="risk-value-options">
-                {riskValueOptions[key].map(({ value: choice, label }) => (
-                  <label className="risk-value-row" key={choice}>
-                    <span>{label}</span>
-                    <select
-                      value={riskValues[key][choice] || ''}
-                      onChange={(event) =>
-                        updateRiskValue(key, choice, event.target.value)
-                      }
-                      aria-label={`${label} risk value for ${choice}`}
-                    >
-                      <option value="">Select value</option>
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <option value={value} key={value}>{value}</option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
+              {isCountryRiskFactor(key) ? (
+                <div className="country-risk-list">
+                  {countryRiskEntries[key].map(({ country, risk }, index) => (
+                    <div className="country-risk-row" key={`${key}-${index}`}>
+                      <label>
+                        {label}
+                        <select
+                          value={country}
+                          onChange={(event) =>
+                            updateCountryRiskEntry(
+                              key,
+                              index,
+                              'country',
+                              event.target.value,
+                            )
+                          }
+                          aria-label={`${label} for risk value ${index + 1}`}
+                        >
+                          <option value="">Select {label.toLowerCase()}</option>
+                          {riskValueOptions[key].map(({ value, label: choiceLabel }) => (
+                            <option
+                              value={value}
+                              key={value}
+                              disabled={countryRiskEntries[key].some(
+                                (entry, entryIndex) =>
+                                  entryIndex !== index && entry.country === value,
+                              )}
+                            >
+                              {choiceLabel}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Risk
+                        <select
+                          value={risk}
+                          onChange={(event) =>
+                            updateCountryRiskEntry(
+                              key,
+                              index,
+                              'risk',
+                              event.target.value,
+                            )
+                          }
+                          aria-label={`Risk value for ${label.toLowerCase()} ${country || index + 1}`}
+                        >
+                          <option value="">Select risk</option>
+                          {[1, 2, 3, 4, 5].map((value) => (
+                            <option value={value} key={value}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="button-secondary country-risk-remove"
+                        onClick={() => removeCountryRiskEntry(key, index)}
+                        aria-label={`Remove ${label.toLowerCase()} risk value ${index + 1}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="retry-button"
+                    onClick={() => addCountryRiskEntry(key)}
+                    disabled={
+                      countryRiskEntries[key].length >= riskValueOptions[key].length
+                    }
+                  >
+                    Add {label.toLowerCase()} risk
+                  </button>
+                </div>
+              ) : (
+                <div className="risk-value-options">
+                  {riskValueOptions[key].map(({ value: choice, label }) => (
+                    <label className="risk-value-row" key={choice}>
+                      <span>{label}</span>
+                      <select
+                        value={riskValues[key][choice] || ''}
+                        onChange={(event) =>
+                          updateRiskValue(key, choice, event.target.value)
+                        }
+                        aria-label={`${label} risk value for ${choice}`}
+                      >
+                        <option value="">Select value</option>
+                        {[1, 2, 3, 4, 5].map((value) => (
+                          <option value={value} key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
             </details>
           ))}
+          <div className="risk-section-actions">
+            <button
+              type="button"
+              className="button-primary weight-save-button"
+              onClick={saveRiskValues}
+              disabled={!canSubmitRiskValues || saving}
+            >
+              {saving ? 'Submitting…' : 'Submit risk values'}
+            </button>
+          </div>
         </div>
 
         <div className="weight-editor-footer">
           <p className="data-view-note">
             {savedWeights === null
               ? 'These are unsaved draft values. The saved configuration could not be loaded.'
-              : hasChanges
-                ? 'You have unsaved changes. Save to submit this version to the API.'
+              : hasWeightChanges || hasRiskValueChanges
+                ? 'You have unsaved changes. Submit weights and risk values separately.'
                 : 'No unsaved changes.'}
           </p>
-          <label className="employee-id-field" htmlFor="weight-employee-id">
-            Employee internal ID
-            <input
-              id="weight-employee-id"
-              type="text"
-              inputMode="numeric"
-              maxLength={10}
-              pattern="[0-9]{10}"
-              value={employeeId}
-              onChange={(event) =>
-                setEmployeeId(event.target.value.replace(/\D/g, '').slice(0, 10))
-              }
-              placeholder="10 digits"
-              aria-describedby="weight-employee-id-hint"
-            />
-            <span id="weight-employee-id-hint">Required for the configuration audit log.</span>
-          </label>
-          <button
-            type="button"
-            className="button-primary weight-save-button"
-            onClick={saveWeights}
-            disabled={!isComplete || !hasChanges || saving}
-          >
-            {saving ? 'Saving…' : 'Save weights'}
-          </button>
         </div>
         {saveError && (
           <div className="data-view-alert data-view-alert-error" role="alert">
-            <strong>Could not save weights</strong>
+            <strong>Could not submit configuration changes</strong>
             <span>{saveError} Your changes remain as an unsaved draft.</span>
           </div>
         )}
