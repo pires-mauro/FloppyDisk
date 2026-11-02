@@ -101,7 +101,23 @@ CREATE TABLE weights (
            tax_domicile_weight + professional_activity_weight + income_weight > 0)
 );
 
-CREATE TABLE country_risk (
+CREATE TABLE nationality_risk (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    weights_version INTEGER NOT NULL REFERENCES weights(version_number),
+    country_code TEXT NOT NULL REFERENCES countries(country_code),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    UNIQUE (weights_version, country_code)
+);
+
+CREATE TABLE tax_domicile_risk (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    weights_version INTEGER NOT NULL REFERENCES weights(version_number),
+    country_code TEXT NOT NULL REFERENCES countries(country_code),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    UNIQUE (weights_version, country_code)
+);
+
+CREATE TABLE country_of_residence_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
