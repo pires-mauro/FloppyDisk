@@ -3,6 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.errors import ForeignKeyViolation
 
+from app.db.weights import ConfigurationConflict, get_configuration, save_configuration
+from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
 from app.db.clients import DuplicateClient, client_exists, list_clients, save_client
 from app.models.client_models import ClientSubmission, ClientCreated, ClientOverview, DuplicateResponse
 
@@ -88,24 +90,34 @@ def delete_client(client_id: str):
     }
 
 
-@router.post(
-    "/v1/weights",
-    tags=["Weights"]
-)
-def post_weights():
-    return {
-        "message": "Weights created successfully",
-    }
+@router.post("/v1/weights", response_model=WeightVersion, status_code=201, tags=["Weights"])
+def post_weights(update: WeightUpdate):
+    try:
+        return {"version": save_configuration(update)}
+    except ConfigurationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get(
-    "/v1/weights/{version}",
-    tags=["Weights"]
-)
-def get_weights(version: str):
-    return {
-        "message": f"Weights version {version} retrieved successfully",
-    }
+def read_configuration(version: int | None = None):
+    try:
+        result = get_configuration(version)
+    except ConfigurationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="No saved scoring configuration for this version")
+    return result
+
+
+@router.get("/v1/weights/latest", response_model=ScoringConfiguration, tags=["Weights"])
+def get_latest_weights():
+    return read_configuration()
+
+
+@router.get("/v1/weights/{version}", response_model=ScoringConfiguration, tags=["Weights"])
+def get_weights(version: int):
+    return read_configuration(version)
 
 
 @router.post(
