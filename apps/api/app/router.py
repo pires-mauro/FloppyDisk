@@ -1,4 +1,10 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
+from psycopg.errors import ForeignKeyViolation
+
+from app.db.clients import DuplicateClient, client_exists, list_clients, save_client
+from app.models.client_models import ClientSubmission, ClientCreated, ClientOverview, DuplicateResponse
 
 from app.models.model import HealthCheckResponse, IncomeRangeResponse, ProfessionalCategoryResponse, CountryResponse
 
@@ -23,14 +29,33 @@ def health_check() -> HealthCheckResponse:
     )
 
 
-@router.post(
-    "/v1/clients", 
-    tags=["Clients"]
-)
-def post_client():
-    return {
-        "message": "Client created successfully",
-    }
+@router.get("/v1/clients/check-duplicate", response_model=DuplicateResponse, tags=["Clients"])
+def check_duplicate(
+    client_id: Annotated[str, Query(alias="clientId", min_length=1, max_length=100)],
+    issuing_country: Annotated[str, Query(alias="issuingCountry", pattern="^[A-Z]{2}$")],
+):
+    document_number = client_id.strip()
+    if not document_number:
+        raise HTTPException(status_code=422, detail="Client ID number is required")
+    return {"exists": client_exists(document_number, issuing_country)}
+
+
+@router.get("/v1/clients", response_model=list[ClientOverview], tags=["Clients"])
+def get_clients():
+    return list_clients()
+
+
+@router.post("/v1/clients", response_model=ClientCreated, status_code=201, tags=["Clients"])
+def post_client(submission: ClientSubmission):
+    try:
+        client_id = save_client(submission)
+    except DuplicateClient as exc:
+        raise HTTPException(status_code=409, detail="A client with this ID number and issuing country already exists") from exc
+    except ForeignKeyViolation as exc:
+        raise HTTPException(status_code=422, detail="Unknown country or scoring version") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"internal_client_id": client_id}
 
 
 @router.get(
