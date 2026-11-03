@@ -5,6 +5,8 @@ from pydantic import BaseModel, model_validator
 
 from app.scoring import evaluate_risk
 
+from app.models.model import HealthCheckResponse
+
 router = APIRouter()
 
 
@@ -27,22 +29,21 @@ class RiskEvaluationRequest(BaseModel):
         if not math.isfinite(total_weight) or total_weight <= 0:
             raise ValueError("At least one risk factor must have a positive weight.")
         if any(
-            not math.isfinite(value) or value < 0 or value > 5
+            not math.isfinite(value) or value < 1 or value > 5
             for value in self.scores.values()
         ):
-            raise ValueError("Scores must be finite numbers between 0 and 5.")
+            raise ValueError("Scores must be finite numbers between 1 and 5.")
         return self
 
 
-@router.get("/health", tags=["Health"])
+@router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
 def health_check():
-    return {
-        "status": "ok",
-        "service": "risk_calculator",
-    }
+    return HealthCheckResponse(
+        status="ok",
+        service="bank-risk-scoring-service",
+    )
 
-
-# This is used to computer the risk score of a client,
+# This is used to compute the risk score of a client,
 #  if critical component is up
 @router.post("/v1/evaluation/", tags=["Evaluation"])
 def post_evaluate_risk(request: RiskEvaluationRequest) -> float:
