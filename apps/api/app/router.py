@@ -1,3 +1,10 @@
+import logging
+
+import psycopg
+
+from models.risk import RiskReviewRequest, RiskReviewResponse, WeightUpdateRequest
+from app.weight_store import get_latest_weights as read_latest_weights, update_weights
+
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -17,6 +24,7 @@ from app.db.reference_data import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -29,6 +37,15 @@ def health_check() -> HealthCheckResponse:
         status="ok",
         service="bank-onboarding-api",
     )
+
+
+@router.post("/v1/risk/evaluation", tags=["Risk"])
+def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
+    raise HTTPException(
+        status_code=501,
+        detail="Risk scoring is not available yet. The database integration has not been implemented.",
+    )
+
 
 
 @router.get("/v1/clients/check-duplicate", response_model=DuplicateResponse, tags=["Clients"])
