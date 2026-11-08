@@ -24,7 +24,7 @@ docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=
 if errorlevel 1 goto failed
 docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\002_reference_data.sql"
 if errorlevel 1 goto failed
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\003_officer_permissions.sql"
+docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\003_countries.sql"
 if errorlevel 1 goto failed
 docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\004_test_officer.sql"
 if errorlevel 1 goto failed

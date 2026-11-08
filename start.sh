@@ -37,7 +37,7 @@ done
 
 docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/001_initial_schema.sql"
 docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/002_reference_data.sql"
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/003_officer_permissions.sql"
+docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/003_countries.sql"
 echo "Applying test officer migration..."
 docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/004_test_officer.sql"
 
