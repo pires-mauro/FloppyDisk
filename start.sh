@@ -35,11 +35,8 @@ for attempt in $(seq 1 30); do
     sleep 2
 done
 
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/001_initial_schema.sql"
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/002_reference_data.sql"
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/003_officer_permissions.sql"
-echo "Applying test officer migration..."
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps/api/migrations/004_test_officer.sql"
+echo "Applying pending database migrations..."
+python3 "apps/api/migrations/apply.py"
 
 open_url "http://localhost:5173"
 open_url "http://localhost:2424/docs"
