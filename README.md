@@ -107,7 +107,7 @@ The risk calculator runs as a separate Docker Compose service named `critical`:
 - `router.py` defines HTTP endpoints, currently `GET /health`.
 - `scoring.py` will contain the risk calculation rules and is currently empty.
 
-The backend and risk calculator can both use port `8000` because they run in separate containers. The risk calculator does not publish a host port. Its health endpoint is reachable from the API container, but scoring and the backend's scoring integration are not implemented yet.
+The backend and risk calculator can both use port `8000` because they run in separate containers. The risk calculator is published on host port `2424`, making its health endpoint and Swagger UI accessible from the host. Scoring and the backend's scoring integration are not implemented yet.
 
 ---
 
@@ -166,14 +166,31 @@ The `critical` service does not currently need a `.env` file. Its Docker Compose
 ### 1. Configure Environment
 Create the root, backend, and frontend `.env` files as described above. Ensure the database password in the backend connection URL matches `POSTGRES_PASSWORD` in the root `.env`.
 
+
+
 ### 2. Start All Docker Services
+
+IF YOU ARE USING WINDOWS PLEASE HAVE DOCKER DESKTOP INSTALLED AND OPENEND IN THE BACKGROUND
+
+On Windows, double click `start.bat` in the file explorer. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
+
+On Linux or macOS, run `bash start.sh` from the project root. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
+
+If you want to do it manually, follow these instructions:
+
 From the project root:
 
 ```bash
 docker compose config
 docker compose up -d --build
+py apps/api/migrations/apply.py  # Windows
+# or: python3 apps/api/migrations/apply.py  # Linux/macOS
 ```
-Docker Compose will build application images, download PostgreSQL if needed, and start all configured services.
+Docker Compose will build application images, download PostgreSQL if needed, and start all configured services. The migration runner applies pending numbered SQL files and records them in `schema_migrations`, so rerunning it skips completed migrations. The `start.bat` and `start.sh` scripts run this migration step automatically after PostgreSQL is ready.
+
+For an existing database created by an earlier version of the startup scripts, the runner detects the current schema and seeded reference data before recording those migrations as applied.
+
+Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
 ### 3. Check Service Status
 Verify that containers are running:
@@ -203,12 +220,13 @@ docker compose logs -f db
 | :--- | :--- | :--- |
 | **Frontend** | [http://localhost:5173](http://localhost:5173) | React application |
 | **Backend API** | [http://localhost:8000](http://localhost:8000) | FastAPI server |
-| **Swagger Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API documentation |
+| **Main API Swagger Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API documentation |
+| **Critical Swagger Docs** | [http://localhost:2424/docs](http://localhost:2424/docs) | Risk calculator API documentation |
 | **ReDoc** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | Alternative API documentation |
 | **Health Check** | [http://localhost:8000/api/health](http://localhost:8000/api/health) | API health endpoint |
 | **API Root** | [http://localhost:8000/](http://localhost:8000/) | API welcome endpoint |
 | **PostgreSQL** | `localhost:5432` | Database connection point |
-| **Risk Calculator Health** | `http://critical:8000/health` | Docker network only; not directly accessible from the host browser |
+| **Risk Calculator Health** | [http://localhost:2424/health](http://localhost:2424/health) | Risk calculator health endpoint |
 
 > **Note:** PostgreSQL is a database service, not a web server. Connect to it through the backend or a database client (e.g., DBeaver, pgAdmin).  
 > The API health endpoint confirms that the FastAPI server responds; it does not guarantee PostgreSQL connectivity.
@@ -302,7 +320,7 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 ## Database Access & Guidelines
 
-The backend will connect to PostgreSQL using `psycopg`. Database operations will use raw parameterized SQL statements rather than an ORM. This integration is not implemented in the current skeleton.
+The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. The weight configuration endpoint creates its configuration table when first accessed. Weight submissions can update weights or risk values independently; risk-value submissions merge only the submitted choices, and `null` explicitly removes a choice. Other database integrations remain unimplemented.
 
 ### Example Connection
 ```python
@@ -316,7 +334,7 @@ def get_connection():
 ### Best Practices
 - **Parameterized Queries:** Always use parameterized SQL queries for user-supplied values to prevent SQL injection. Never concatenate raw strings into SQL queries.
 - **Database Migrations:** Schema changes should be managed using version-controlled SQL scripts.
-- **Dependencies:** Each Python service has its own `requirements.txt`, currently containing `fastapi` and `uvicorn[standard]`. Add `psycopg` to the backend when implementing database access.
+- **Dependencies:** Each Python service has its own `requirements.txt`; the API uses `fastapi`, `uvicorn[standard]`, and `psycopg[binary]`.
 
 ---
 
