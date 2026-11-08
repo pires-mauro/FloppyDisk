@@ -19,14 +19,8 @@ echo Database did not become ready in time.
 goto failed
 
 :database_ready
-echo Applying test officer migration...
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\001_initial_schema.sql"
-if errorlevel 1 goto failed
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\002_reference_data.sql"
-if errorlevel 1 goto failed
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\003_countries.sql"
-if errorlevel 1 goto failed
-docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1 -f - < "apps\api\migrations\004_test_officer.sql"
+echo Applying pending database migrations...
+py "apps\api\migrations\apply.py"
 if errorlevel 1 goto failed
 
 start "" "http://localhost:5173"

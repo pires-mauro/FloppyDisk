@@ -1,4 +1,3 @@
--- Country codes from the frontend on Mauro commit 26d20b3.
 -- English labels use Intl.DisplayNames, matching the frontend approach.
 -- Apply after 001 and 002. Existing country records are preserved.
 BEGIN;
