@@ -84,8 +84,8 @@ export function validateForm(form: ClientForm): FieldErrors {
   if (form.email && !isValidEmail(form.email.trim())) {
     errors.email = 'Enter a valid email address.'
   }
-  if (form.phoneNumber && !/^\d+$/.test(form.phoneNumber)) {
-    errors.phoneNumber = 'Use digits only for the local number.'
+  if (form.phoneNumber && !/^\d{9}$/.test(form.phoneNumber)) {
+    errors.phoneNumber = 'Enter exactly 9 digits for the local number.'
   }
   if (form.dateOfBirth) {
     const dateOfBirth = parseDateOfBirth(form.dateOfBirth)

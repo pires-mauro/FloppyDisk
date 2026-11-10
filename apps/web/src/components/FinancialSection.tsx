@@ -41,6 +41,68 @@ export function FinancialSection({
         error={errors.countryOfResidence}
         onChange={(value) => onChange('countryOfResidence', value)}
       />
+      <FormField
+        id="addressStreet"
+        label="Street"
+        required
+        error={errors.addressStreet}
+      >
+        <input
+          id="addressStreet"
+          name="addressStreet"
+          type="text"
+          value={form.addressStreet}
+          onChange={(event) => onChange('addressStreet', event.target.value)}
+          maxLength={200}
+          autoComplete="address-line1"
+          aria-invalid={Boolean(errors.addressStreet)}
+        />
+      </FormField>
+      <FormField
+        id="addressHouseNumber"
+        label="House number"
+      >
+        <input
+          id="addressHouseNumber"
+          name="addressHouseNumber"
+          type="text"
+          value={form.addressHouseNumber}
+          onChange={(event) => onChange('addressHouseNumber', event.target.value)}
+          maxLength={30}
+          autoComplete="address-line2"
+        />
+      </FormField>
+      <FormField
+        id="addressPostalCode"
+        label="Postal code"
+      >
+        <input
+          id="addressPostalCode"
+          name="addressPostalCode"
+          type="text"
+          value={form.addressPostalCode}
+          onChange={(event) => onChange('addressPostalCode', event.target.value)}
+          maxLength={20}
+          autoComplete="postal-code"
+        />
+      </FormField>
+      <FormField
+        id="addressCity"
+        label="City"
+        required
+        error={errors.addressCity}
+      >
+        <input
+          id="addressCity"
+          name="addressCity"
+          type="text"
+          value={form.addressCity}
+          onChange={(event) => onChange('addressCity', event.target.value)}
+          maxLength={100}
+          autoComplete="address-level2"
+          aria-invalid={Boolean(errors.addressCity)}
+        />
+      </FormField>
       <CountrySelectField
         id="taxDomicile"
         label="Tax domicile"

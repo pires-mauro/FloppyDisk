@@ -2,7 +2,7 @@ import math
 
 from fastapi import APIRouter
 
-from app.models.model import HealthCheckResponse
+from app.models.model import HealthCheckResponse, RiskCalculationResult
 from pydantic import BaseModel, model_validator
 
 from app.scoring import evaluate_risk
@@ -46,7 +46,7 @@ def health_check():
 # This is used to compute the risk score of a client,
 #  if critical component is up
 @router.post("/v1/evaluation/", tags=["Evaluation"])
-def post_evaluate_risk(request: RiskEvaluationRequest) -> float:
+def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
     return evaluate_risk(request.weights, request.scores)
 
 

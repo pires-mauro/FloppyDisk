@@ -99,6 +99,7 @@ def _call_risk_service(
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid response") from exc
 
     try:
+        logger.info("Risk service response: %s", payload)
         result = RiskCalculationResult.model_validate(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid evaluation") from exc

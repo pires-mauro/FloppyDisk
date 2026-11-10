@@ -57,9 +57,10 @@ export function ClientProfileSection({
       </FormField>
       <FormField
         id="clientId"
-        label="Existing client ID (if applicable)"
+        label="ID document number"
+        required
         error={errors.clientId}
-        hint="Leave blank for a new client"
+        hint="As shown on the client's official ID"
       >
         <input
           id="clientId"
@@ -68,7 +69,7 @@ export function ClientProfileSection({
           value={form.clientId}
           onChange={(event) => onChange('clientId', event.target.value)}
           maxLength={100}
-          placeholder="Enter an existing client ID, if available"
+          placeholder="Enter the ID document number"
           aria-invalid={Boolean(errors.clientId)}
           aria-describedby={
             errors.clientId ? 'clientId-error' : 'clientId-hint'

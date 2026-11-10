@@ -47,6 +47,7 @@ export function PhoneNumberField({
           inputMode="numeric"
           autoComplete="tel-national"
           value={number}
+          maxLength={9}
           onChange={(event) =>
             onNumberChange(event.target.value.replace(/\D/g, ''))
           }

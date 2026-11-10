@@ -31,8 +31,14 @@ def run_psql(*args: str, input_text: str | None = None) -> str:
         [*PSQL, *args],
         input=input_text,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         check=True,
         capture_output=True,
+        env={
+            **__import__("os").environ,
+            "PGCLIENTENCODING": "UTF8",
+        },
     )
     return result.stdout.strip()
 

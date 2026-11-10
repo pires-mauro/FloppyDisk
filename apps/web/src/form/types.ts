@@ -8,6 +8,10 @@ export type ClientForm = {
   clientId: string
   dateOfBirth: string
   countryOfResidence: string
+  addressStreet: string
+  addressHouseNumber: string
+  addressPostalCode: string
+  addressCity: string
   taxDomicile: string
   nationality: string
   idIssuingCountry: string
@@ -30,6 +34,10 @@ export const initialForm: ClientForm = {
   clientId: '',
   dateOfBirth: '',
   countryOfResidence: '',
+  addressStreet: '',
+  addressHouseNumber: '',
+  addressPostalCode: '',
+  addressCity: '',
   taxDomicile: '',
   nationality: '',
   idIssuingCountry: '',

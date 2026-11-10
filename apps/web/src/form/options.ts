@@ -58,8 +58,11 @@ export const requiredFields: Exclude<
   'pepConfirmed' | 'sanctionsMatch'
 >[] = [
   'clientName',
+  'clientId',
   'dateOfBirth',
   'countryOfResidence',
+  'addressStreet',
+  'addressCity',
   'taxDomicile',
   'nationality',
   'idIssuingCountry',

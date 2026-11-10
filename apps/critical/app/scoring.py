@@ -1,4 +1,7 @@
-def evaluate_risk(weights: dict[str, float], scores: dict[str, float]) -> float:
+from app.models.model import RiskCalculationResult
+
+
+def evaluate_risk(weights: dict[str, float], scores: dict[str, float]) -> RiskCalculationResult:
     """ This function evaluates the risk score of a client based on the provided weights. 
         The formula is as follows: 
             sum(weights[key] * scores[key] for key in weights) / sum(weights.values())
@@ -12,9 +15,22 @@ def evaluate_risk(weights: dict[str, float], scores: dict[str, float]) -> float:
     """
 
     total_weight = sum(weights.values())
-    if total_weight == 0:
-        return 0.0
-    return sum(
+    score = sum(
         (weights[key] / total_weight) * scores.get(key, 0)
         for key in weights
+    )
+
+    # Determine the risk tier based on the calculated score
+    if score < 2.5:
+        tier = "Low Risk"
+    elif score < 3.75:
+        tier = "Medium Risk"
+    else:
+        tier = "High Risk"
+
+    return RiskCalculationResult(
+        score=round(score, 2),
+        tier=tier,
+        overrideReason=None,
+        contributions={key: (weights[key] / total_weight) * scores.get(key, 0) for key in weights},
     )

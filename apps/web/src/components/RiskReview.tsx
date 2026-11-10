@@ -68,6 +68,27 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
 
       try {
         const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+        const configurationResponse = await fetch(`${apiUrl}/v1/weights/latest`, {
+          signal: controller.signal,
+        })
+        if (!configurationResponse.ok) {
+          throw new Error(await getErrorMessage(configurationResponse))
+        }
+        const configuration: unknown = await configurationResponse.json()
+        const configurationVersion =
+          configuration !== null &&
+          typeof configuration === 'object' &&
+          'version' in configuration &&
+          (typeof configuration.version === 'string' ||
+            typeof configuration.version === 'number') &&
+          Number.isInteger(Number(configuration.version)) &&
+          Number(configuration.version) > 0
+            ? Number(configuration.version)
+            : null
+        if (configurationVersion === null) {
+          throw new Error('The saved weight configuration has an invalid version.')
+        }
+
         const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -138,7 +159,7 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
             (typeof result.weightVersion === 'string' ||
               typeof result.weightVersion === 'number')
               ? result.weightVersion
-              : '—',
+              : configurationVersion,
           overrideReason:
             client.pepConfirmed || client.sanctionsMatch
               ? [
@@ -179,6 +200,12 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...client,
+          address: {
+            street: client.addressStreet,
+            city: client.addressCity,
+            houseNumber: client.addressHouseNumber || null,
+            postalCode: client.addressPostalCode || null,
+          },
           riskScore: evaluation.score,
           riskTier: evaluation.tier,
           finalDecision: decision,
@@ -214,6 +241,17 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
         ['Full legal name', client.clientName],
         ['Existing client ID', client.clientId || 'New client'],
         ['Date of birth', client.dateOfBirth],
+        [
+          'Address',
+          [
+            client.addressStreet,
+            client.addressHouseNumber,
+            client.addressPostalCode,
+            client.addressCity,
+          ]
+            .filter(Boolean)
+            .join(', '),
+        ],
         ['Nationality', countries.find((country) => country.code === client.nationality)?.name ?? client.nationality],
         ['ID issuing country', countries.find((country) => country.code === client.idIssuingCountry)?.name ?? client.idIssuingCountry],
         ['Marital status', client.maritalStatus],

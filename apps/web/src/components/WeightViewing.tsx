@@ -15,6 +15,7 @@ type WeightValues = Record<RiskFactor, string>
 type RiskValueChoice = { value: string; label: string }
 type RiskValueOptions = Record<RiskFactor, RiskValueChoice[]>
 type RiskValueValues = Record<RiskFactor, Record<string, string>>
+type RiskValueUpdates = Partial<Record<RiskFactor, Record<string, number>>>
 type CountryRiskEntry = { country: string; risk: string }
 type CountryRiskFactor =
   | 'country_weight'
@@ -238,39 +239,22 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
       ]),
     ),
   }
-  const countryRiskEntriesValid = countryRiskFactors.every((factor) => {
-    const entries = countryRiskEntries[factor]
-    return (
-      entries.every(
-        ({ country, risk }) =>
-          (country === '' && risk === '') || (country !== '' && risk !== ''),
-      ) &&
-      new Set(
-        entries
-          .map(({ country }) => country)
-          .filter((country) => country !== ''),
-      ).size === entries.filter(({ country }) => country !== '').length
-    )
-  })
-  const riskValueUpdates = Object.fromEntries(
-    riskFactors.flatMap(([factor]) => {
-      const current = currentRiskValues[factor]
-      const saved = savedRiskValues?.[factor] ?? {}
-      const choices = new Set([...Object.keys(current), ...Object.keys(saved)])
-      const updates = Object.fromEntries(
-        [...choices].flatMap((choice) => {
-          const currentValue = current[choice] || ''
-          const savedValue = saved[choice] || ''
-          if (currentValue === savedValue) return []
-          return [[choice, currentValue === '' ? null : Number(currentValue)]]
-        }),
-      )
-      return Object.keys(updates).length > 0 ? [[factor, updates]] : []
-    }),
-  ) as Record<string, Record<string, number | null>>
+  const riskValueUpdates: RiskValueUpdates = {}
+  for (const [factor] of riskFactors) {
+    const current = currentRiskValues[factor]
+    const saved = savedRiskValues?.[factor] ?? {}
+    const choices = new Set([...Object.keys(current), ...Object.keys(saved)])
+    const updates: Record<string, number> = {}
+    for (const choice of choices) {
+      const currentValue = current[choice] || ''
+      const savedValue = saved[choice] || ''
+      if (currentValue !== '' && currentValue !== savedValue) {
+        updates[choice] = Number(currentValue)
+      }
+    }
+    if (Object.keys(updates).length > 0) riskValueUpdates[factor] = updates
+  }
   const hasRiskValueChanges = Object.keys(riskValueUpdates).length > 0
-  const canSubmitRiskValues =
-    isEmployeeIdValid && hasRiskValueChanges && countryRiskEntriesValid
 
   function updateWeight(field: RiskFactor, value: string) {
     setWeights((current) => ({ ...current, [field]: value }))
@@ -329,7 +313,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
 
   async function saveConfiguration(payload: {
     weights?: Record<string, number>
-    risk_values?: Record<string, Record<string, number | null>>
+    risk_values?: RiskValueUpdates
   }) {
     setSaving(true)
     setSaveMessage('')
@@ -363,7 +347,19 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         setSavedWeights({ ...weights })
         setSaveMessage('The API accepted the weight update.')
       } else {
-        setSavedRiskValues(structuredClone(currentRiskValues))
+        setSavedRiskValues((current) => {
+          const saved = current
+            ? structuredClone(current)
+            : createEmptyRiskValues(riskValueOptions)
+          for (const [factor] of riskFactors) {
+            for (const [choice, risk] of Object.entries(
+              payload.risk_values?.[factor] ?? {},
+            )) {
+              saved[factor][choice] = String(risk)
+            }
+          }
+          return saved
+        })
         setSaveMessage('The API accepted the risk value update.')
       }
     } catch (requestError) {
@@ -385,9 +381,9 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     })
   }
 
-  function saveRiskValues() {
+  function saveRiskValues(factor: RiskFactor) {
     return saveConfiguration({
-      risk_values: riskValueUpdates,
+      risk_values: { [factor]: riskValueUpdates[factor] },
     })
   }
 
@@ -531,7 +527,11 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
 
         <div className="risk-value-editor">
           <h4>Risk values by selectable choice</h4>
-          <p>Set risk scores only for the choices you want to add or change.</p>
+          <p>
+            Submit each factor separately. Only selected values that you change
+            are sent; the backend carries all other values forward from the
+            previous version.
+          </p>
           {riskFactors.map(([key, label]) => (
             <details className="risk-value-group" key={key}>
               <summary>{label} values</summary>
@@ -630,18 +630,18 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
                   ))}
                 </div>
               )}
+              <div className="risk-section-actions">
+                <button
+                  type="button"
+                  className="button-primary weight-save-button"
+                  onClick={() => void saveRiskValues(key)}
+                  disabled={!isEmployeeIdValid || !riskValueUpdates[key] || saving}
+                >
+                  {saving ? 'Submitting…' : `Submit ${label.toLowerCase()} values`}
+                </button>
+              </div>
             </details>
           ))}
-          <div className="risk-section-actions">
-            <button
-              type="button"
-              className="button-primary weight-save-button"
-              onClick={saveRiskValues}
-              disabled={!canSubmitRiskValues || saving}
-            >
-              {saving ? 'Submitting…' : 'Submit risk values'}
-            </button>
-          </div>
         </div>
 
         <div className="weight-editor-footer">
