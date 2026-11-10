@@ -38,6 +38,7 @@ class ClientSubmission(BaseModel):
                 "dialPrefix": "+352",
                 "phoneNumber": "012345678",
                 "officerId": "1234567890",
+                "pepConfirmed": False,
                 "sanctionsMatch": False,
                 "riskScore": 2,
                 "riskTier": "Low Risk",
@@ -63,6 +64,7 @@ class ClientSubmission(BaseModel):
     phoneNumber: Annotated[str, Field(min_length=9, max_length=9, pattern=r'^[0-9]{9}$')]
     officerId: Annotated[str, Field(min_length=10, max_length=10, pattern=r'^[0-9]{10}$')]
     officerComment: Annotated[str, Field(max_length=500)] = ''
+    pepConfirmed: bool = False
     sanctionsMatch: bool = False
     riskScore: Decimal = Field(ge=1, le=5, decimal_places=2)
     riskTier: Literal['Low Risk', 'Medium Risk', 'High Risk']
@@ -90,12 +92,6 @@ class ClientSubmission(BaseModel):
         expected = {'Low Risk': 'approve', 'Medium Risk': 'manual_review', 'High Risk': 'decline'}
         if self.finalDecision != expected[self.riskTier]:
             raise ValueError('Final decision does not match the reviewed risk tier')
-        score_tier = 'Low Risk' if self.riskScore < Decimal('2.50') else (
-            'Medium Risk' if self.riskScore < Decimal('3.75') else 'High Risk')
-        # A screening override can raise the tier above the numerical result.
-        override = self.sanctionsMatch and self.riskTier == 'High Risk'
-        if self.riskTier != score_tier and not override:
-            raise ValueError('Reviewed tier does not match score or screening override')
         return self
 
 

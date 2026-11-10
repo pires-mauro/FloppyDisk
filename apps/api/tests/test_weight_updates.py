@@ -3,7 +3,7 @@ import unittest
 from pydantic import ValidationError
 
 from app.weight_store import merge_weight_values
-from models.risk import WeightUpdateRequest
+from app.models.weight_models import WeightUpdateRequest
 
 
 class WeightUpdateTests(unittest.TestCase):
