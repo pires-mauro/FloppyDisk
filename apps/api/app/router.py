@@ -1,30 +1,48 @@
+import json
 import logging
-
-import psycopg
-
-from models.risk import RiskReviewRequest, RiskReviewResponse, WeightUpdateRequest
-from app.weight_store import get_latest_weights as read_latest_weights, update_weights
-
+import os
 from typing import Annotated
+from urllib.error import HTTPError as URLHTTPError, URLError
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
 
-from app.db.weights import ConfigurationConflict, get_configuration, save_configuration
-from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
-from app.db.clients import DuplicateClient, client_exists, list_clients, save_client
-from app.models.client_models import ClientSubmission, ClientCreated, ClientOverview, DuplicateResponse
-
-from app.models.model import HealthCheckResponse, IncomeRangeResponse, ProfessionalCategoryResponse, CountryResponse
-
+from app.db.clients import (
+    DuplicateClient,
+    client_exists,
+    list_clients,
+    save_client,
+)
 from app.db.reference_data import (
     get_countries,
     get_income_ranges,
     get_professional_categories,
 )
+from app.db.weights import ConfigurationConflict, get_configuration, save_configuration
+from app.models.client_models import (
+    ClientCreated,
+    ClientOverview,
+    ClientSubmission,
+    DuplicateResponse,
+)
+from app.models.health_models import HealthCheckResponse
+from app.models.reference_data_models import (
+    CountryResponse,
+    IncomeRangeResponse,
+    ProfessionalCategoryResponse,
+)
+from app.models.risk import (
+    RiskCalculationResult,
+    RiskFactorResult,
+    RiskReviewRequest,
+    RiskReviewResponse,
+)
+from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
 
-router = APIRouter()
 logger = logging.getLogger(__name__)
+router = APIRouter()
 
 
 @router.get(
@@ -39,11 +57,110 @@ def health_check() -> HealthCheckResponse:
     )
 
 
-@router.post("/v1/risk/evaluation", tags=["Risk"])
+RISK_FACTORS = (
+    ("country_weight", "country_of_residence", "Country of residence", "countryOfResidence"),
+    ("nationality_weight", "nationality", "Nationality", "nationality"),
+    ("tax_domicile_weight", "tax_domicile", "Tax domicile", "taxDomicile"),
+    ("professional_activity_weight", "profession", "Professional activity", "profession"),
+    ("income_weight", "income", "Annual income", "annualIncome"),
+)
+
+
+def _call_risk_service(
+    weights: dict[str, int],
+    scores: dict[str, int],
+    *,
+    pep_confirmed: bool,
+    sanctions_match: bool,
+) -> RiskCalculationResult:
+    base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
+    request = Request(
+        f"{base_url}/v1/evaluation/",
+        data=json.dumps({
+            "weights": weights,
+            "scores": scores,
+            "pepConfirmed": pep_confirmed,
+            "sanctionsMatch": sanctions_match,
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except URLHTTPError as exc:
+        logger.warning("Risk service returned HTTP %s", exc.code)
+        raise HTTPException(status_code=502, detail="Risk calculation service returned an error") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        logger.warning("Risk service is unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Risk calculation service is unavailable") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.warning("Risk service returned an invalid response")
+        raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid response") from exc
+
+    try:
+        result = RiskCalculationResult.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid evaluation") from exc
+    if result.contributions.keys() != weights.keys():
+        raise HTTPException(status_code=502, detail="Risk calculation service returned an incomplete factor breakdown")
+    return result
+
+
+@router.post("/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"])
 def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
-    raise HTTPException(
-        status_code=501,
-        detail="Risk scoring is not available yet. The database integration has not been implemented.",
+    try:
+        configuration = get_configuration()
+    except ConfigurationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if configuration is None:
+        raise HTTPException(status_code=409, detail="No saved scoring configuration is available")
+
+    weight_values = configuration.weights.model_dump()
+    service_weights: dict[str, int] = {}
+    score_values: dict[str, int] = {}
+    factor_details: list[tuple[str, str, str, int, int]] = []
+    for factor_key, service_key, label, client_field in RISK_FACTORS:
+        value = getattr(request, client_field)
+        factor_scores = configuration.risk_values.get(factor_key, {})
+        if value not in factor_scores:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No saved risk value is configured for {label}: {value}.",
+            )
+        score_values[service_key] = factor_scores[value]
+        service_weights[service_key] = weight_values[factor_key]
+        factor_details.append((
+            service_key,
+            label,
+            value,
+            weight_values[factor_key],
+            factor_scores[value],
+        ))
+
+    calculation = _call_risk_service(
+        service_weights,
+        score_values,
+        pep_confirmed=request.pepConfirmed,
+        sanctions_match=request.sanctionsMatch,
+    )
+    factors = [
+        RiskFactorResult(
+            label=label,
+            value=value,
+            weight=weight,
+            score=factor_score,
+            contribution=calculation.contributions[service_key],
+        )
+        for service_key, label, value, weight, factor_score in factor_details
+    ]
+
+    return RiskReviewResponse(
+        score=calculation.score,
+        tier=calculation.tier,
+        weightVersion=configuration.version,
+        overrideReason=calculation.overrideReason,
+        factors=factors,
     )
 
 
