@@ -29,10 +29,10 @@ class RiskEvaluationRequest(BaseModel):
         if not math.isfinite(total_weight) or total_weight <= 0:
             raise ValueError("At least one risk factor must have a positive weight.")
         if any(
-            not math.isfinite(value) or value < 0 or value > 5
+            not math.isfinite(value) or value < 1 or value > 5
             for value in self.scores.values()
         ):
-            raise ValueError("Scores must be finite numbers between 0 and 5.")
+            raise ValueError("Scores must be finite numbers between 1 and 5.")
         return self
 
 

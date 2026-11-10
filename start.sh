@@ -23,6 +23,21 @@ cd "$script_dir"
 
 docker compose up -d --build
 
+echo "Waiting for PostgreSQL to become ready..."
+for attempt in $(seq 1 30); do
+    if docker compose exec -T db pg_isready -U bank_user -d bank_onboarding >/dev/null 2>&1; then
+        break
+    fi
+    if [ "$attempt" -eq 30 ]; then
+        echo "Database did not become ready in time." >&2
+        exit 1
+    fi
+    sleep 2
+done
+
+echo "Applying pending database migrations..."
+python3 "apps/api/migrations/apply.py"
+
 open_url "http://localhost:5173"
 open_url "http://localhost:2424/docs"
 open_url "http://localhost:8000/docs"

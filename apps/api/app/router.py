@@ -1,3 +1,10 @@
+import logging
+
+import psycopg
+
+from models.risk import RiskReviewRequest, RiskReviewResponse, WeightUpdateRequest
+from app.weight_store import get_latest_weights as read_latest_weights, update_weights
+
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -30,6 +37,15 @@ def health_check() -> HealthCheckResponse:
         status="ok",
         service="bank-onboarding-api",
     )
+
+
+@router.post("/v1/risk/evaluation", tags=["Risk"])
+def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
+    raise HTTPException(
+        status_code=501,
+        detail="Risk scoring is not available yet. The database integration has not been implemented.",
+    )
+
 
 
 @router.get("/v1/clients/check-duplicate", response_model=DuplicateResponse, tags=["Clients"])
@@ -88,24 +104,6 @@ def update_client(client_id: str):
 def delete_client(client_id: str):
     return {
         "message": f"Client {client_id} deleted successfully",
-    }
-
-
-@router.get("/v1/weights/latest", tags=["Weights"])
-def get_latest_weights():
-    try:
-        configuration = read_latest_weights()
-    except (psycopg.Error, RuntimeError) as error:
-        logger.exception("Could not retrieve the latest weight configuration.")
-        raise HTTPException(
-            status_code=503,
-            detail="Weight storage is unavailable.",
-        ) from error
-
-    return configuration or {
-        "version": "Draft",
-        "weights": {},
-        "risk_values": {},
     }
 
 

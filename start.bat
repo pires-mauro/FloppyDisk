@@ -5,6 +5,24 @@ pushd "%~dp0"
 docker compose up -d --build
 if errorlevel 1 goto failed
 
+set "attempts=0"
+:wait_for_db
+docker compose exec -T db pg_isready -U bank_user -d bank_onboarding >nul 2>&1
+if not errorlevel 1 goto database_ready
+set /a attempts+=1
+if %attempts% geq 30 goto database_timeout
+timeout /t 2 /nobreak >nul
+goto wait_for_db
+
+:database_timeout
+echo Database did not become ready in time.
+goto failed
+
+:database_ready
+echo Applying pending database migrations...
+py "apps\api\migrations\apply.py"
+if errorlevel 1 goto failed
+
 start "" "http://localhost:5173"
 start "" "http://localhost:2424/docs"
 start "" "http://localhost:8000/docs"

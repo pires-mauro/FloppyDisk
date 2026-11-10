@@ -183,8 +183,12 @@ From the project root:
 ```bash
 docker compose config
 docker compose up -d --build
+py apps/api/migrations/apply.py  # Windows
+# or: python3 apps/api/migrations/apply.py  # Linux/macOS
 ```
-Docker Compose will build application images, download PostgreSQL if needed, and start all configured services.
+Docker Compose will build application images, download PostgreSQL if needed, and start all configured services. The migration runner applies pending numbered SQL files and records them in `schema_migrations`, so rerunning it skips completed migrations. The `start.bat` and `start.sh` scripts run this migration step automatically after PostgreSQL is ready.
+
+For an existing database created by an earlier version of the startup scripts, the runner detects the current schema and seeded reference data before recording those migrations as applied.
 
 Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
