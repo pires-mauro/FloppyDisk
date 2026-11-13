@@ -20,7 +20,12 @@ from app.db.reference_data import (
     get_income_ranges,
     get_professional_categories,
 )
-from app.db.weights import ConfigurationConflict, get_configuration, save_configuration
+from app.db.weights import (
+    ConfigurationConflict,
+    get_configuration,
+    save_configuration,
+)
+from app.officer_auth import OfficerAuthenticationError, OfficerNotAdmin
 from app.models.client_models import (
     ClientCreated,
     ClientOverview,
@@ -186,6 +191,8 @@ def get_clients():
 def post_client(submission: ClientSubmission):
     try:
         client_id = save_client(submission)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     except DuplicateClient as exc:
         raise HTTPException(status_code=409, detail="A client with this ID number and issuing country already exists") from exc
     except ForeignKeyViolation as exc:
@@ -229,6 +236,10 @@ def delete_client(client_id: str):
 def post_weights(update: WeightUpdate):
     try:
         return {"version": save_configuration(update)}
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except OfficerNotAdmin as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ConfigurationConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:

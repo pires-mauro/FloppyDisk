@@ -22,6 +22,7 @@ export type ClientForm = {
   dialPrefix: string
   phoneNumber: string
   officerId: string
+  officerPassword: string
   officerComment: string
   pepConfirmed: boolean
   sanctionsMatch: boolean
@@ -48,6 +49,7 @@ export const initialForm: ClientForm = {
   dialPrefix: '',
   phoneNumber: '',
   officerId: '',
+  officerPassword: '',
   officerComment: '',
   pepConfirmed: false,
   sanctionsMatch: false,

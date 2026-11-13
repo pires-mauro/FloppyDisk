@@ -61,19 +61,31 @@ function createEmptyRiskValues(options: RiskValueOptions): RiskValueValues {
 function getCountryRiskEntries(
   riskValues: RiskValueValues,
 ): CountryRiskEntryLists {
+  const sharedValues: Record<string, string> = {}
+  for (const factor of countryRiskFactors) {
+    for (const [country, risk] of Object.entries(riskValues[factor])) {
+      if (risk !== '' && !(country in sharedValues)) {
+        sharedValues[country] = risk
+      }
+    }
+  }
+
+  const entries = Object.entries(sharedValues).map(([country, risk]) => ({
+    country,
+    risk,
+  }))
   return Object.fromEntries(
-    countryRiskFactors.map((factor) => [
-      factor,
-      Object.entries(riskValues[factor])
-        .filter(([, risk]) => risk !== '')
-        .map(([country, risk]) => ({ country, risk })),
-    ]),
+    countryRiskFactors.map((factor) => [factor, entries]),
   ) as CountryRiskEntryLists
 }
 
 function isCountryRiskFactor(key: RiskFactor): key is CountryRiskFactor {
   return countryRiskFactors.some((factor) => factor === key)
 }
+
+const editableRiskFactors = riskFactors.filter(
+  ([key]) => key === 'country_weight' || !isCountryRiskFactor(key),
+)
 
 function getApiUrl() {
   return (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
@@ -138,6 +150,21 @@ function parseWeights(
     'version' in payload && typeof payload.version === 'string'
       ? payload.version
       : 'Current'
+  const sharedCountryValues = Object.fromEntries(
+    getCountryRiskEntries(riskValues).country_weight.map(({ country, risk }) => [
+      country,
+      risk,
+    ]),
+  )
+  for (const factor of countryRiskFactors) {
+    riskValues[factor] = Object.fromEntries(
+      options[factor].map(({ value }) => [
+        value,
+        sharedCountryValues[value] ?? '',
+      ]),
+    )
+  }
+
   return {
     version,
     weights,
@@ -147,6 +174,13 @@ function parseWeights(
 }
 
 async function getErrorMessage(response: Response) {
+  if (response.status === 401) {
+    return 'The officer ID or password is incorrect. Check your credentials and try again.'
+  }
+  if (response.status === 403) {
+    return "Only an admin officer can save weights or risk values. Use an admin officer's credentials."
+  }
+
   try {
     const body: unknown = await response.json()
     if (
@@ -175,6 +209,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     useState<CountryRiskEntryLists>(() => getCountryRiskEntries(emptyRiskValues))
   const [version, setVersion] = useState('')
   const [employeeId, setEmployeeId] = useState('')
+  const [officerPassword, setOfficerPassword] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -281,32 +316,38 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
     field: keyof CountryRiskEntry,
     value: string,
   ) {
-    setCountryRiskEntries((current) =>
-      ({
-        ...current,
-        [factor]: current[factor].map((entry, entryIndex) =>
-          entryIndex === index ? { ...entry, [field]: value } : entry,
-        ),
-      }),
-    )
+    setCountryRiskEntries((current) => {
+      const entries = current[factor].map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [field]: value } : entry,
+      )
+      return Object.fromEntries(
+        countryRiskFactors.map((countryFactor) => [countryFactor, entries]),
+      ) as CountryRiskEntryLists
+    })
     setSaveMessage('')
     setSaveError('')
   }
 
   function addCountryRiskEntry(factor: CountryRiskFactor) {
-    setCountryRiskEntries((current) => ({
-      ...current,
-      [factor]: [...current[factor], { country: '', risk: '' }],
-    }))
+    setCountryRiskEntries((current) => {
+      const entries = [...current[factor], { country: '', risk: '' }]
+      return Object.fromEntries(
+        countryRiskFactors.map((countryFactor) => [countryFactor, entries]),
+      ) as CountryRiskEntryLists
+    })
     setSaveMessage('')
     setSaveError('')
   }
 
   function removeCountryRiskEntry(factor: CountryRiskFactor, index: number) {
-    setCountryRiskEntries((current) => ({
-      ...current,
-      [factor]: current[factor].filter((_, entryIndex) => entryIndex !== index),
-    }))
+    setCountryRiskEntries((current) => {
+      const entries = current[factor].filter(
+        (_, entryIndex) => entryIndex !== index,
+      )
+      return Object.fromEntries(
+        countryRiskFactors.map((countryFactor) => [countryFactor, entries]),
+      ) as CountryRiskEntryLists
+    })
     setSaveMessage('')
     setSaveError('')
   }
@@ -325,6 +366,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employee_id: employeeId,
+          password: officerPassword,
           ...payload,
         }),
       })
@@ -334,18 +376,23 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
       }
 
       const result: unknown = await response.json()
-      if (
+      const savedVersion =
         result !== null &&
         typeof result === 'object' &&
         'version' in result &&
-        typeof result.version === 'string'
-      ) {
-        setVersion(result.version)
+        (typeof result.version === 'string' ||
+          (typeof result.version === 'number' &&
+            Number.isInteger(result.version)))
+          ? String(result.version)
+          : ''
+      if (!savedVersion) {
+        throw new Error('The weights endpoint did not return a saved version.')
       }
+      setVersion(savedVersion)
 
       if (payload.weights) {
         setSavedWeights({ ...weights })
-        setSaveMessage('The API accepted the weight update.')
+        setSaveMessage(`Weight update saved as version ${savedVersion}.`)
       } else {
         setSavedRiskValues((current) => {
           const saved = current
@@ -360,7 +407,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
           }
           return saved
         })
-        setSaveMessage('The API accepted the risk value update.')
+        setSaveMessage(`Risk value update saved as version ${savedVersion}.`)
       }
     } catch (requestError) {
       setSaveError(
@@ -382,8 +429,16 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
   }
 
   function saveRiskValues(factor: RiskFactor) {
+    const factorsToSave = isCountryRiskFactor(factor)
+      ? countryRiskFactors
+      : [factor]
+    const updates: RiskValueUpdates = {}
+    for (const target of factorsToSave) {
+      const changes = riskValueUpdates[target]
+      if (changes) updates[target] = changes
+    }
     return saveConfiguration({
-      risk_values: { [factor]: riskValueUpdates[factor] },
+      risk_values: updates,
     })
   }
 
@@ -424,17 +479,36 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
             </div>
             {savedRiskValues && (
               <div className="current-risk-values">
-                {riskFactors.map(([key, label]) => (
+                {editableRiskFactors.map(([key, label]) => (
                   <details className="risk-value-group" key={key}>
-                    <summary>{label} risk values</summary>
-                    <dl>
-                      {riskValueOptions[key].map(({ value, label: choiceLabel }) => (
-                        <div key={value}>
-                          <dt>{choiceLabel}</dt>
-                          <dd>{savedRiskValues[key][value] || '—'}</dd>
-                        </div>
-                      ))}
-                    </dl>
+                    <summary>
+                      {label === 'Country' ? 'Country, nationality and tax domicile risk values' : `${label} risk values`}
+                    </summary>
+                    <table className="saved-risk-values">
+                      <thead>
+                        <tr>
+                          <th scope="col">{isCountryRiskFactor(key) ? 'Country' : 'Choice'}</th>
+                          <th scope="col">Risk value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {riskValueOptions[key]
+                          .filter(({ value }) => savedRiskValues[key][value])
+                          .map(({ value, label: choiceLabel }) => (
+                            <tr key={value}>
+                              <th scope="row">{choiceLabel}</th>
+                              <td>{savedRiskValues[key][value]}</td>
+                            </tr>
+                          ))}
+                        {!riskValueOptions[key].some(
+                          ({ value }) => savedRiskValues[key][value],
+                        ) && (
+                          <tr>
+                            <td colSpan={2}>No risk values configured.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </details>
                 ))}
               </div>
@@ -456,6 +530,10 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
           <div>
             <h3>Create a new version</h3>
             <p>Set a weight from 1 to 5 for each factor, then save the draft.</p>
+            <p className="data-view-note">
+              The API accepts changes only for officer IDs marked as admin.
+              This ID field does not authenticate the person submitting it.
+            </p>
           </div>
           <button
             type="button"
@@ -477,23 +555,40 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
           </div>
         )}
 
-        <label className="employee-id-field" htmlFor="weight-employee-id">
-          Employee internal ID
-          <input
-            id="weight-employee-id"
-            type="text"
-            inputMode="numeric"
-            maxLength={10}
-            pattern="[0-9]{10}"
-            value={employeeId}
-            onChange={(event) =>
-              setEmployeeId(event.target.value.replace(/\D/g, '').slice(0, 10))
-            }
-            placeholder="10 digits"
-            aria-describedby="weight-employee-id-hint"
-          />
-          <span id="weight-employee-id-hint">Required for the configuration audit log.</span>
-        </label>
+        <div className="weight-credentials">
+          <label className="employee-id-field" htmlFor="weight-employee-id">
+            Employee internal ID
+            <input
+              id="weight-employee-id"
+              type="text"
+              inputMode="numeric"
+              maxLength={10}
+              pattern="[0-9]{10}"
+              value={employeeId}
+              onChange={(event) =>
+                setEmployeeId(event.target.value.replace(/\D/g, '').slice(0, 10))
+              }
+              placeholder="10 digits"
+              aria-describedby="weight-employee-id-hint"
+            />
+            <span id="weight-employee-id-hint">Required for the configuration audit log.</span>
+          </label>
+          <label className="employee-id-field" htmlFor="weight-officer-password">
+            Officer password
+            <input
+              id="weight-officer-password"
+              type="password"
+              autoComplete="current-password"
+              maxLength={1024}
+              value={officerPassword}
+              onChange={(event) => setOfficerPassword(event.target.value)}
+              aria-describedby="weight-officer-password-hint"
+            />
+            <span id="weight-officer-password-hint">
+              Admin password required to save changes.
+            </span>
+          </label>
+        </div>
 
         <div className="weight-editor-list">
           {riskFactors.map(([key, label], index) => (
@@ -519,7 +614,12 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
             type="button"
             className="button-primary weight-save-button"
             onClick={saveWeights}
-            disabled={!isWeightComplete || !hasWeightChanges || saving}
+            disabled={
+              !isWeightComplete ||
+              !hasWeightChanges ||
+              !officerPassword ||
+              saving
+            }
           >
             {saving ? 'Submitting…' : 'Submit weights'}
           </button>
@@ -528,13 +628,15 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         <div className="risk-value-editor">
           <h4>Risk values by selectable choice</h4>
           <p>
-            Submit each factor separately. Only selected values that you change
-            are sent; the backend carries all other values forward from the
-            previous version.
+            Country values are shared by country, nationality and tax domicile.
+            Submit other factors separately; only changed values are sent, and
+            all other values carry forward from the previous version.
           </p>
-          {riskFactors.map(([key, label]) => (
+          {editableRiskFactors.map(([key, label]) => (
             <details className="risk-value-group" key={key}>
-              <summary>{label} values</summary>
+              <summary>
+                {label === 'Country' ? 'Country values' : `${label} values`}
+              </summary>
               {isCountryRiskFactor(key) ? (
                 <div className="country-risk-list">
                   {countryRiskEntries[key].map(({ country, risk }, index) => (
@@ -635,9 +737,18 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
                   type="button"
                   className="button-primary weight-save-button"
                   onClick={() => void saveRiskValues(key)}
-                  disabled={!isEmployeeIdValid || !riskValueUpdates[key] || saving}
+                  disabled={
+                    !isEmployeeIdValid ||
+                    !officerPassword ||
+                    !riskValueUpdates[key] ||
+                    saving
+                  }
                 >
-                  {saving ? 'Submitting…' : `Submit ${label.toLowerCase()} values`}
+                  {saving
+                    ? 'Submitting…'
+                    : key === 'country_weight'
+                      ? 'Submit country values'
+                      : `Submit ${label.toLowerCase()} values`}
                 </button>
               </div>
             </details>

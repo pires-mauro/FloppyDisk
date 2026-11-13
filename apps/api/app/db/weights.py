@@ -1,4 +1,5 @@
 from app.db.connection import get_connection
+from app.officer_auth import authenticate_officer
 from app.models.weight_models import FactorWeights, ScoringConfiguration, WeightUpdate
 
 
@@ -54,12 +55,15 @@ def get_configuration(version: int | None = None):
 
 def save_configuration(update: WeightUpdate) -> str:
     with get_connection() as conn:
+        officer_id = authenticate_officer(
+            conn,
+            update.employee_id,
+            update.password.get_secret_value(),
+            require_admin=True,
+        )
+
         # Serialize saves, including the first save when there is no row to lock.
         conn.execute('LOCK TABLE weights IN SHARE ROW EXCLUSIVE MODE')
-        officer = conn.execute('SELECT id FROM officers WHERE internal_id = %s',
-                               (update.employee_id,)).fetchone()
-        if officer is None:
-            raise ValueError('Employee ID does not match an existing officer')
         previous = conn.execute(f'SELECT version_number, {WEIGHT_COLUMNS} FROM weights '
                                 'ORDER BY version_number DESC LIMIT 1').fetchone()
         if update.weights:
@@ -72,7 +76,7 @@ def save_configuration(update: WeightUpdate) -> str:
         version = conn.execute(f'''
             INSERT INTO weights ({WEIGHT_COLUMNS}, created_by_officer_id)
             VALUES (%s, %s, %s, %s, %s, %s) RETURNING version_number
-        ''', (*values, officer[0])).fetchone()[0]
+        ''', (*values, officer_id)).fetchone()[0]
 
         for key, (table, fk, lookup, pk, label) in RULES.items():
             if previous:

@@ -7,6 +7,7 @@ const clientColumns = [
   ['risk_tier', 'Risk tier'],
   ['final_decision', 'Final decision'],
   ['officer_id', 'Officer ID'],
+  ['officer_name', 'Officer name'],
   ['submission_date', 'Submission date'],
 ] as const
 

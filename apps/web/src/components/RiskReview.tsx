@@ -5,6 +5,7 @@ type RiskReviewProps = {
   client: ClientForm
   countries: Country[]
   onBack: () => void
+  onDecisionSaved: () => void
 }
 
 type RiskTier = 'Low Risk' | 'Medium Risk' | 'High Risk'
@@ -32,6 +33,13 @@ function formatScore(score: number) {
 }
 
 async function getErrorMessage(response: Response) {
+  if (response.status === 401) {
+    return 'The officer ID or password is incorrect. Check your credentials and try again.'
+  }
+  if (response.status === 403) {
+    return 'You do not have permission to complete this action.'
+  }
+
   try {
     const body: unknown = await response.json()
     if (
@@ -49,14 +57,18 @@ async function getErrorMessage(response: Response) {
   return `Risk score request failed (${response.status}).`
 }
 
-export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
+export function RiskReview({
+  client,
+  countries,
+  onBack,
+  onDecisionSaved,
+}: RiskReviewProps) {
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [decisionLoading, setDecisionLoading] = useState(false)
   const [decisionError, setDecisionError] = useState('')
-  const [decisionComplete, setDecisionComplete] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -89,10 +101,12 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
           throw new Error('The saved weight configuration has an invalid version.')
         }
 
+        const riskClient: Partial<ClientForm> = { ...client }
+        delete riskClient.officerPassword
         const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(client),
+          body: JSON.stringify(riskClient),
           signal: controller.signal,
         })
 
@@ -192,7 +206,6 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
     if (!evaluation) return
     setDecisionLoading(true)
     setDecisionError('')
-    setDecisionComplete('')
     try {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
       const response = await fetch(`${apiUrl}/v1/clients`, {
@@ -222,7 +235,7 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
       ) {
         throw new Error('The API did not confirm a saved client record.')
       }
-      setDecisionComplete('Decision saved and client record created.')
+      onDecisionSaved()
     } catch (requestError) {
       setDecisionError(
         requestError instanceof Error
@@ -399,7 +412,6 @@ export function RiskReview({ client, countries, onBack }: RiskReviewProps) {
           <p>Client data is saved only when a final decision is submitted.</p>
         </div>
         {decisionError && <p className="decision-error" role="alert">{decisionError}</p>}
-        {decisionComplete && <p className="decision-success" role="status">{decisionComplete}</p>}
         <div className="decision-actions">
           <button
             type="button"

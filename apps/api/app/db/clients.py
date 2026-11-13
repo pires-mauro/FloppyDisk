@@ -2,6 +2,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.db.connection import get_connection
+from app.officer_auth import authenticate_officer
 from app.models.client_models import ClientSubmission
 
 
@@ -24,6 +25,7 @@ def list_clients():
                    country.name AS issuing_country,
                    initcap(a.assigned_tier::text) || ' Risk' AS risk_tier,
                    a.decision AS final_decision, o.internal_id AS officer_id,
+                   o.name AS officer_name,
                    a.evaluation_time AS submission_date
             FROM clients c
             JOIN countries country ON country.country_code = c.id_issuing_country_code
@@ -47,12 +49,13 @@ def save_client(form: ClientSubmission) -> int:
         profession = conn.execute('''
             SELECT id, name FROM professional_categories WHERE name = %s OR id::text = %s
         ''', (str(form.profession), str(form.profession))).fetchone()
-        officer = conn.execute('SELECT id FROM officers WHERE internal_id = %s',
-                               (form.officerId,)).fetchone()
         if not income or not profession:
             raise ValueError('Unknown income range or professional category')
-        if not officer:
-            raise ValueError('Officer ID does not exist')
+        officer_id = authenticate_officer(
+            conn,
+            form.officerId,
+            form.officerPassword.get_secret_value(),
+        )
 
         address_id = conn.execute('''
             INSERT INTO addresses (street, house_number, postal_code, city, country_code)
@@ -73,7 +76,8 @@ def save_client(form: ClientSubmission) -> int:
             raise DuplicateClient()
 
         snapshot = form.model_dump(mode='json', exclude={
-            'riskScore', 'riskTier', 'finalDecision', 'weightVersion'})
+            'riskScore', 'riskTier', 'finalDecision', 'weightVersion',
+            'officerPassword'})
         snapshot.update(income_range_id=income[0], income_range_label=income[1],
                         professional_category_id=profession[0], professional_category=profession[1])
         decision = {'approve': 'approved', 'manual_review': 'manual_review', 'decline': 'rejected'}
@@ -81,7 +85,7 @@ def save_client(form: ClientSubmission) -> int:
             INSERT INTO risk_assessments (client_id, officer_id, final_score, assigned_tier,
                 officer_comment, decision, preliminary, weights_version, input_snapshot)
             VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s)
-        ''', (client[0], officer[0], form.riskScore, form.riskTier.split()[0].lower(),
+        ''', (client[0], officer_id, form.riskScore, form.riskTier.split()[0].lower(),
               form.officerComment or None, decision[form.finalDecision], form.weightVersion,
               Jsonb(snapshot)))
         return client[0]

@@ -25,6 +25,7 @@ function App() {
   )
   const [duplicateError, setDuplicateError] = useState('')
   const [duplicateChecking, setDuplicateChecking] = useState(false)
+  const [decisionSaved, setDecisionSaved] = useState(false)
   const validationErrors = validateForm(form)
   const errors = validationErrors
   const errorCount = Object.keys(errors).length
@@ -108,6 +109,7 @@ function App() {
   function updateField(field: keyof ClientForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }))
     setDuplicateError('')
+    setDecisionSaved(false)
   }
 
   function updateRiskFlag(
@@ -115,6 +117,7 @@ function App() {
     value: boolean,
   ) {
     setForm((current) => ({ ...current, [field]: value }))
+    setDecisionSaved(false)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -182,6 +185,17 @@ function App() {
     setForm(initialForm)
     setSubmitted(false)
     setStep('details')
+    setDuplicateError('')
+    setDecisionSaved(false)
+  }
+
+  function handleDecisionSaved() {
+    setForm(initialForm)
+    setSubmitted(false)
+    setStep('details')
+    setActiveTab('onboarding')
+    setDuplicateError('')
+    setDecisionSaved(true)
   }
 
   const isRiskStep = step === 'risk'
@@ -197,9 +211,6 @@ function App() {
             alt="FloppyDisk"
           />
         </a>
-        <div className="secure-label">
-          <span className="secure-dot" /> Secure client onboarding
-        </div>
       </header>
 
       <nav className="primary-tabs" aria-label="Main navigation">
@@ -257,6 +268,11 @@ function App() {
       </section>
 
       {!isRiskStep && <form className="onboarding-form" noValidate onSubmit={handleSubmit}>
+        {decisionSaved && (
+          <div className="decision-success" role="status">
+            Decision saved and client record created. The form is ready for the next client.
+          </div>
+        )}
         {countriesError && (
           <div className="country-fallback" role="status">
             <span className="fallback-icon" aria-hidden="true">i</span>
@@ -338,6 +354,7 @@ function App() {
           client={form}
           countries={countries}
           onBack={() => setStep('details')}
+          onDecisionSaved={handleDecisionSaved}
         />
       )}
       </>}

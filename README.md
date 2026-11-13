@@ -1,6 +1,6 @@
 # FloppyDisk — Bank Client Onboarding
 
-A full-stack web application for digital bank client onboarding, developed as part of a university project. 
+A full-stack web application for digital bank client onboarding, developed as part of a university project.
 
 The application aims to provide a structured onboarding process where onboarding officers enter client information, receive a risk assessment, and accept or reject the client. Agreed risk rules may also trigger an automatic rejection.
 
@@ -8,16 +8,16 @@ The application aims to provide a structured onboarding process where onboarding
 
 ## Tech Stack
 
-| Technology | Purpose |
-| :--- | :--- |
-| **React** | Frontend UI |
-| **TypeScript** | Frontend type safety |
-| **Vite** | Frontend development server |
-| **Python** | Backend programming language |
-| **FastAPI** | REST API framework |
-| **PostgreSQL** | Relational database |
-| **Psycopg** | Python PostgreSQL driver |
-| **Docker** | Containerization |
+| Technology         | Purpose                       |
+| :----------------- | :---------------------------- |
+| **React**          | Frontend UI                   |
+| **TypeScript**     | Frontend type safety          |
+| **Vite**           | Frontend development server   |
+| **Python**         | Backend programming language  |
+| **FastAPI**        | REST API framework            |
+| **PostgreSQL**     | Relational database           |
+| **Psycopg**        | Python PostgreSQL driver      |
+| **Docker**         | Containerization              |
 | **Docker Compose** | Multi-container orchestration |
 
 > **Note:** The backend is planned to use Python and Psycopg to communicate directly with PostgreSQL via plain SQL. SQLAlchemy and Alembic are intentionally not used.
@@ -71,7 +71,7 @@ FloppyDisk/
 └── README.md
 ```
 
-*Additional folders can be introduced as the project grows.*
+_Additional folders can be introduced as the project grows._
 
 The frontend/backend tree includes planned folders. The new `critical` service currently contains `main.py`, `router.py`, and the empty `scoring.py` placeholder.
 
@@ -114,6 +114,7 @@ The backend and risk calculator can both use port `8000` because they run in sep
 ## Prerequisites
 
 Before getting started, make sure you have installed:
+
 - [Git](https://git-scm.com/)
 - [Node.js](https://nodejs.org/)
 - [Python](https://www.python.org/)
@@ -126,32 +127,38 @@ Before getting started, make sure you have installed:
 ## Environment Variables
 
 ### Root `.env`
+
 **Location:** `FloppyDisk/.env`
 
 ```env
 POSTGRES_PASSWORD=your_local_dev_password
 ```
-*Docker Compose uses this variable to configure PostgreSQL.*
+
+_Docker Compose uses this variable to configure PostgreSQL._
 
 ### Backend `.env`
+
 **Location:** `FloppyDisk/apps/api/.env`
 
 ```env
 DATABASE_URL=postgresql://bank_user:your_local_dev_password@db:5432/bank_onboarding
 APP_ENV=development
 ```
+
 - The hostname `db` is used when the backend runs inside Docker Compose.
 - When running the backend directly on your computer (outside Docker), replace `db` with `localhost`.
 - `DATABASE_URL` is a connection string that the Python application will read from its environment to establish a connection using Psycopg.
 - Docker Compose also sets `RISK_SERVICE_URL=http://critical:8000` for the backend. This is the address the backend will use to call the risk calculator.
 
 ### Frontend `.env`
+
 **Location:** `FloppyDisk/apps/web/.env`
 
 ```env
 VITE_API_URL=http://localhost:8000/api
 ```
-*This tells the frontend where to find the backend API.*
+
+_This tells the frontend where to find the backend API._
 
 > ⚠️ **Security Warning:** Never put database passwords or secrets in frontend environment variables. Variables prefixed with `VITE_` are exposed to the browser. Do not commit real `.env` files to Git; use `.env.example` files containing placeholder values for teammates.
 
@@ -164,9 +171,8 @@ The `critical` service does not currently need a `.env` file. Its Docker Compose
 ## Getting Started
 
 ### 1. Configure Environment
+
 Create the root, backend, and frontend `.env` files as described above. Ensure the database password in the backend connection URL matches `POSTGRES_PASSWORD` in the root `.env`.
-
-
 
 ### 2. Start All Docker Services
 
@@ -186,6 +192,7 @@ docker compose up -d --build
 py apps/api/migrations/apply.py  # Windows
 # or: python3 apps/api/migrations/apply.py  # Linux/macOS
 ```
+
 Docker Compose will build application images, download PostgreSQL if needed, and start all configured services. The migration runner applies pending numbered SQL files and records them in `schema_migrations`, so rerunning it skips completed migrations. The `start.bat` and `start.sh` scripts run this migration step automatically after PostgreSQL is ready.
 
 For an existing database created by an earlier version of the startup scripts, the runner detects the current schema and seeded reference data before recording those migrations as applied.
@@ -193,6 +200,7 @@ For an existing database created by an earlier version of the startup scripts, t
 Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
 ### 3. Check Service Status
+
 Verify that containers are running:
 
 ```bash
@@ -200,11 +208,13 @@ docker compose ps
 ```
 
 View all logs:
+
 ```bash
 docker compose logs -f
 ```
 
 View logs for a specific service:
+
 ```bash
 docker compose logs -f web
 docker compose logs -f api
@@ -216,17 +226,17 @@ docker compose logs -f db
 
 ## Local Development URLs
 
-| Service | URL | Description |
-| :--- | :--- | :--- |
-| **Frontend** | [http://localhost:5173](http://localhost:5173) | React application |
-| **Backend API** | [http://localhost:8000](http://localhost:8000) | FastAPI server |
-| **Main API Swagger Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API documentation |
-| **Critical Swagger Docs** | [http://localhost:2424/docs](http://localhost:2424/docs) | Risk calculator API documentation |
-| **ReDoc** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | Alternative API documentation |
-| **Health Check** | [http://localhost:8000/api/health](http://localhost:8000/api/health) | API health endpoint |
-| **API Root** | [http://localhost:8000/](http://localhost:8000/) | API welcome endpoint |
-| **PostgreSQL** | `localhost:5432` | Database connection point |
-| **Risk Calculator Health** | [http://localhost:2424/health](http://localhost:2424/health) | Risk calculator health endpoint |
+| Service                    | URL                                                                  | Description                       |
+| :------------------------- | :------------------------------------------------------------------- | :-------------------------------- |
+| **Frontend**               | [http://localhost:5173](http://localhost:5173)                       | React application                 |
+| **Backend API**            | [http://localhost:8000](http://localhost:8000)                       | FastAPI server                    |
+| **Main API Swagger Docs**  | [http://localhost:8000/docs](http://localhost:8000/docs)             | Interactive API documentation     |
+| **Critical Swagger Docs**  | [http://localhost:2424/docs](http://localhost:2424/docs)             | Risk calculator API documentation |
+| **ReDoc**                  | [http://localhost:8000/redoc](http://localhost:8000/redoc)           | Alternative API documentation     |
+| **Health Check**           | [http://localhost:8000/api/health](http://localhost:8000/api/health) | API health endpoint               |
+| **API Root**               | [http://localhost:8000/](http://localhost:8000/)                     | API welcome endpoint              |
+| **PostgreSQL**             | `localhost:5432`                                                     | Database connection point         |
+| **Risk Calculator Health** | [http://localhost:2424/health](http://localhost:2424/health)         | Risk calculator health endpoint   |
 
 > **Note:** PostgreSQL is a database service, not a web server. Connect to it through the backend or a database client (e.g., DBeaver, pgAdmin).  
 > The API health endpoint confirms that the FastAPI server responds; it does not guarantee PostgreSQL connectivity.
@@ -242,7 +252,7 @@ docker compose exec api python -c "import urllib.request; print(urllib.request.u
 Expected response:
 
 ```json
-{"status":"ok","service":"risk_calculator"}
+{ "status": "ok", "service": "risk_calculator" }
 ```
 
 This confirms that the risk service responds across Docker's network. It does not test risk calculation or database access.
@@ -254,12 +264,15 @@ This confirms that the risk service responds across Docker's network. It does no
 You can run the frontend, backend, and risk calculator directly on your machine while keeping PostgreSQL inside Docker.
 
 ### Start Database Only
+
 From the project root:
+
 ```bash
 docker compose up -d db
 ```
 
 ### Frontend
+
 ```bash
 cd apps/web
 npm install
@@ -267,6 +280,7 @@ npm run dev
 ```
 
 ### Backend
+
 ```bash
 cd apps/api
 py -m venv .venv
@@ -274,7 +288,8 @@ py -m venv .venv
 python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --env-file .env
 ```
-*(Remember to set `DATABASE_URL` to use `localhost:5432` in `apps/api/.env` when running outside Docker).*
+
+_(Remember to set `DATABASE_URL` to use `localhost:5432` in `apps/api/.env` when running outside Docker)._
 
 ### Risk Calculator
 
@@ -298,19 +313,19 @@ For this local setup, add `RISK_SERVICE_URL=http://localhost:8001` to `apps/api/
 
 Run all commands from the project root:
 
-| Command | Purpose |
-| :--- | :--- |
-| `docker compose up -d` | Start services in background |
-| `docker compose up -d --build` | Rebuild images and start services |
-| `docker compose down` | Stop and remove containers |
-| `docker compose ps` | Show status of running services |
-| `docker compose logs -f` | Follow combined logs |
-| `docker compose restart api` | Restart backend service |
-| `docker compose restart web` | Restart frontend service |
-| `docker compose restart critical` | Restart risk calculator service |
-| `docker compose build api` | Build backend Docker image |
-| `docker compose build web` | Build frontend Docker image |
-| `docker compose build critical` | Build risk calculator Docker image |
+| Command                           | Purpose                            |
+| :-------------------------------- | :--------------------------------- |
+| `docker compose up -d`            | Start services in background       |
+| `docker compose up -d --build`    | Rebuild images and start services  |
+| `docker compose down`             | Stop and remove containers         |
+| `docker compose ps`               | Show status of running services    |
+| `docker compose logs -f`          | Follow combined logs               |
+| `docker compose restart api`      | Restart backend service            |
+| `docker compose restart web`      | Restart frontend service           |
+| `docker compose restart critical` | Restart risk calculator service    |
+| `docker compose build api`        | Build backend Docker image         |
+| `docker compose build web`        | Build frontend Docker image        |
+| `docker compose build critical`   | Build risk calculator Docker image |
 
 The Python services copy their code into their Docker images. Rebuild and recreate the affected service after source or dependency changes; restarting alone does not include those changes.
 
@@ -320,9 +335,21 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 ## Database Access & Guidelines
 
-The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. The weight configuration endpoint creates its configuration table when first accessed. Weight submissions can update weights or risk values independently; risk-value submissions merge only the submitted choices, and `null` explicitly removes a choice. Other database integrations remain unimplemented.
+The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. Officer passwords are verified by the API using salted scrypt hashes stored in `officers.password_hash`. Client submissions require valid officer credentials; weight and risk-value changes additionally require an admin officer. Passwords are never stored in client snapshots.
+
+The local demo officers created by the migrations are:
+
+| Officer     | Internal ID  | Password          | Access           |
+| ----------- | ------------ | ----------------- | ---------------- |
+| Alice Smith | `0000000000` | `AliceAdmin!2026` | Admin            |
+| Bob Jones   | `0000000001` | `BobOfficer!2026` | Standard officer |
+
+These are demo credentials only. Change them before exposing the application beyond a trusted local development environment.
+
+Weight submissions can update weights or risk values independently; risk-value submissions merge only the submitted choices, and `null` explicitly removes a choice. Other database integrations remain unimplemented.
 
 ### Example Connection
+
 ```python
 import os
 import psycopg
@@ -332,6 +359,7 @@ def get_connection():
 ```
 
 ### Best Practices
+
 - **Parameterized Queries:** Always use parameterized SQL queries for user-supplied values to prevent SQL injection. Never concatenate raw strings into SQL queries.
 - **Database Migrations:** Schema changes should be managed using version-controlled SQL scripts.
 - **Dependencies:** Each Python service has its own `requirements.txt`; the API uses `fastapi`, `uvicorn[standard]`, and `psycopg[binary]`.
@@ -354,6 +382,7 @@ def get_connection():
 This project is under active development as part of a university assignment.
 
 **Current Setup:**
+
 - [x] React + Vite frontend bootstrap.
 - [x] Python + FastAPI backend setup.
 - [x] PostgreSQL container configuration.
@@ -365,6 +394,7 @@ This project is under active development as part of a university assignment.
 - [x] Manual connectivity check from the API container to the risk calculator.
 
 **Upcoming Features:**
+
 - Risk scoring rules and scoring endpoint.
 - Backend integration with the risk calculator.
 - Risk-service timeout and failure handling.

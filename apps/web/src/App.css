@@ -29,23 +29,6 @@
   mix-blend-mode: multiply;
 }
 
-.secure-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #617889;
-  font-size: 12px;
-  font-weight: 550;
-}
-
-.secure-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #20aeb0;
-  box-shadow: 0 0 0 3px #d9f3f2;
-}
-
 .primary-tabs {
   display: flex;
   gap: 7px;
@@ -448,6 +431,45 @@
   font-weight: 700;
 }
 
+.saved-risk-values {
+  width: 100%;
+  border-collapse: collapse;
+  color: #526a79;
+  font-size: 11px;
+  text-align: left;
+}
+
+.saved-risk-values th,
+.saved-risk-values td {
+  padding: 9px 13px;
+  border-bottom: 1px solid #e7eef1;
+}
+
+.saved-risk-values thead {
+  background: #f3f7f8;
+  color: #718392;
+  font-size: 10px;
+}
+
+.saved-risk-values thead th:last-child,
+.saved-risk-values td:last-child {
+  width: 120px;
+  text-align: center;
+}
+
+.saved-risk-values tbody th {
+  font-weight: 550;
+}
+
+.saved-risk-values tbody td:last-child {
+  color: #146b82;
+  font-weight: 700;
+}
+
+.saved-risk-values tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .weight-editor-heading {
   padding-bottom: 17px;
   border-bottom: 1px solid #edf1f3;
@@ -471,6 +493,22 @@
 
 .employee-id-field {
   margin: 16px 0 0;
+}
+
+.weight-credentials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.weight-credentials .employee-id-field {
+  min-width: 0;
+  margin: 0;
+}
+
+.weight-credentials .employee-id-field input {
+  width: 100%;
 }
 
 .weight-section-actions,
@@ -1590,10 +1628,6 @@
     width: 135px;
   }
 
-  .secure-label {
-    font-size: 10px;
-  }
-
   .primary-tabs {
     gap: 0;
     justify-content: space-between;
@@ -1716,11 +1750,6 @@
 }
 
 @media (max-width: 380px) {
-  .secure-label {
-    max-width: 118px;
-    text-align: right;
-  }
-
   .progress-step {
     flex-direction: column;
   }

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 CountryCode = Annotated[str, Field(pattern=r'^[A-Z]{2}$')]
@@ -63,6 +63,7 @@ class ClientSubmission(BaseModel):
     dialPrefix: Annotated[str, Field(pattern=r'^\+[1-9][0-9]{0,2}$')]
     phoneNumber: Annotated[str, Field(min_length=9, max_length=9, pattern=r'^[0-9]{9}$')]
     officerId: Annotated[str, Field(min_length=10, max_length=10, pattern=r'^[0-9]{10}$')]
+    officerPassword: SecretStr = Field(min_length=1, max_length=1024)
     officerComment: Annotated[str, Field(max_length=500)] = ''
     pepConfirmed: bool = False
     sanctionsMatch: bool = False
@@ -110,4 +111,5 @@ class ClientOverview(BaseModel):
     risk_tier: str
     final_decision: str
     officer_id: str
+    officer_name: str
     submission_date: datetime

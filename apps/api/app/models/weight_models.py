@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 Factor = Literal['country_weight', 'nationality_weight', 'tax_domicile_weight',
@@ -29,6 +29,7 @@ class WeightUpdate(BaseModel):
         }},
     )
     employee_id: str = Field(pattern=r'^[0-9]{10}$')
+    password: SecretStr = Field(min_length=1, max_length=1024)
     weights: FactorWeights | None = None
     risk_values: dict[Factor, dict[str, Rating | None]] | None = None
 

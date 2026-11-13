@@ -81,6 +81,9 @@ export function validateForm(form: ClientForm): FieldErrors {
   if (form.officerId && !/^\d{10}$/.test(form.officerId)) {
     errors.officerId = 'Officer ID must be exactly 10 digits.'
   }
+  if (form.officerPassword.length > 1024) {
+    errors.officerPassword = 'Password must be 1024 characters or fewer.'
+  }
   if (form.email && !isValidEmail(form.email.trim())) {
     errors.email = 'Enter a valid email address.'
   }

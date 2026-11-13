@@ -60,6 +60,29 @@ export function OfficerSection({
         />
       </FormField>
       <FormField
+        id="officerPassword"
+        label="Officer password"
+        required
+        error={errors.officerPassword}
+        hint="Used to verify your officer account when saving the client"
+      >
+        <input
+          id="officerPassword"
+          name="officerPassword"
+          type="password"
+          autoComplete="current-password"
+          maxLength={1024}
+          value={form.officerPassword}
+          onChange={(event) => onChange('officerPassword', event.target.value)}
+          aria-invalid={Boolean(errors.officerPassword)}
+          aria-describedby={
+            errors.officerPassword
+              ? 'officerPassword-error'
+              : 'officerPassword-hint'
+          }
+        />
+      </FormField>
+      <FormField
         id="officerComment"
         label="Officer comment"
         error={errors.officerComment}

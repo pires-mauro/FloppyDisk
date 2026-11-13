@@ -81,6 +81,8 @@ def initialize_history() -> None:
 def main() -> int:
     try:
         initialize_history()
+        # New numbered SQL files are discovered automatically; keep no
+        # separate migration registry to maintain.
         migrations = sorted(
             path
             for path in MIGRATIONS_DIR.glob("*.sql")
