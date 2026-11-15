@@ -1,45 +1,11 @@
-import math
-
 from fastapi import APIRouter
 
 from app.models.model import HealthCheckResponse, RiskCalculationResult
-from pydantic import BaseModel, model_validator
+from onboarding_shared.models import RiskEvaluationRequest
 
 from app.scoring import SCORING_RULE_VERSION, evaluate_risk
 
 router = APIRouter()
-
-
-class RiskEvaluationRequest(BaseModel):
-    weights: dict[str, float]
-    scores: dict[str, float | None]
-    # Temporary screening inputs until the OpenSanctions integration is ready.
-    pepConfirmed: bool = False
-    sanctionsMatch: bool = False
-
-    @model_validator(mode="after")
-    def validate_factors(self):
-        if not self.weights or self.weights.keys() != self.scores.keys():
-            raise ValueError("Provide matching non-empty weights and scores.")
-        if any(not key.strip() for key in self.weights):
-            raise ValueError("Risk factor names cannot be empty.")
-        if any(
-            not math.isfinite(value) or value < 0
-            for value in self.weights.values()
-        ):
-            raise ValueError("Weights must be finite, non-negative numbers.")
-        total_weight = sum(self.weights.values())
-        if not math.isfinite(total_weight) or total_weight <= 0:
-            raise ValueError("At least one risk factor must have a positive weight.")
-        country_factors = {'country_of_residence', 'nationality', 'tax_domicile'}
-        if any(value is None and key not in country_factors for key, value in self.scores.items()):
-            raise ValueError('Only country factors can have missing CPI scores.')
-        if any(
-            value is not None and (not math.isfinite(value) or value < 0 or value > 5)
-            for value in self.scores.values()
-        ):
-            raise ValueError("Scores must be finite numbers between 0 and 5.")
-        return self
 
 
 @router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
@@ -59,7 +25,7 @@ def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
     )
 
 
-# Informational metadata only. The API has a local fallback copy of the rules;
+# Informational metadata only. Both services use the shared scoring rules;
 # no returned expression is executed by the API.
 @router.get("/v1/formula/", tags=["Formula"])
 def get_formula() -> dict:

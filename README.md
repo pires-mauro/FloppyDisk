@@ -453,9 +453,10 @@ OpenSanctions screening.
 
 ### Scoring-service downtime
 
-The API's `app/cached_scoring.py` contains a local fallback copy of the rules
-in `critical/app/scoring.py`. Both report the same rule version. Keep the two
-copies in sync when changing scoring logic; shared packaging is deferred.
+Both services install the local `apps/shared` package. Its `onboarding_shared`
+module contains the versioned scoring rules, scoring request/result models,
+and common health-response model. `critical` and the backend fallback use the
+same implementation; onboarding-specific models remain in the API.
 The API calls `critical` first (five-second timeout). Connection failures,
 timeouts, and HTTP 5xx responses use the bundled rules with the latest saved
 database configuration. HTTP 4xx responses and malformed scoring results remain
@@ -477,9 +478,11 @@ recalculated or promoted to confirmed; that follow-up workflow is separate.
 When live OpenSanctions screening is added, fallback results must continue to
 indicate that live screening could not be completed.
 
-Rebuild both services with `docker compose build api critical`. The original
-service directories, requirements files, and Docker build contexts are retained;
-no shared package or additional dependency is required.
+Rebuild both services with `docker compose build api critical`. The Python
+services build from `apps/` using `api/Dockerfile` and `critical/Dockerfile` so
+each image can install `shared`. For direct local development, rerun
+`python -m pip install -r requirements.txt` from each service directory. This
+installs the shared package without changing the services' startup commands.
 
 As with the earlier changes, existing applied migrations are not rerun. An
 existing database needs the old constraint prohibiting preliminary decisions

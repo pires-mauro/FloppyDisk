@@ -1,4 +1,4 @@
-"""Local fallback copy of the critical scoring rules. Keep both copies in sync."""
+"""Versioned scoring rules used by critical and the backend fallback."""
 
 import math
 

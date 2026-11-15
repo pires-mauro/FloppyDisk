@@ -8,7 +8,8 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
-from app.cached_scoring import calculate_risk
+from onboarding_shared.scoring import calculate_risk
+from onboarding_shared.models import RiskEvaluationRequest
 
 from app.db.clients import (
     DuplicateClient,
@@ -85,12 +86,10 @@ def _call_risk_service(
     base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
     request = Request(
         f"{base_url}/v1/evaluation/",
-        data=json.dumps({
-            "weights": weights,
-            "scores": scores,
-            "pepConfirmed": pep_confirmed,
-            "sanctionsMatch": sanctions_match,
-        }).encode("utf-8"),
+        data=RiskEvaluationRequest(
+            weights=weights, scores=scores,
+            pepConfirmed=pep_confirmed, sanctionsMatch=sanctions_match,
+        ).model_dump_json().encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

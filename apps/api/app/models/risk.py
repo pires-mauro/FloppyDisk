@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from onboarding_shared.models import RiskCalculationResult
 from app.models.client_models import ClientDetails
 
 
@@ -14,14 +15,6 @@ class RiskFactorResult(BaseModel):
     weight: float
     score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
     contribution: float | None
-
-
-class RiskCalculationResult(BaseModel):
-    scoringRuleVersion: str = 'unknown'
-    score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
-    tier: Literal["Low Risk", "Medium Risk", "High Risk"]
-    overrideReason: str | None = None
-    contributions: dict[str, float | None]
 
 
 class RiskReviewResponse(BaseModel):
