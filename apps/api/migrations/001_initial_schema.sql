@@ -89,12 +89,12 @@ CREATE TABLE clients (
 -- Weights are nonnegative relative weights; the calculator must normalize them.
 CREATE TABLE weights (
     version_number INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    country_of_residence_weight INTEGER NOT NULL CHECK (country_of_residence_weight >= 0),
-    nationality_weight INTEGER NOT NULL CHECK (nationality_weight >= 0),
-    tax_domicile_weight INTEGER NOT NULL CHECK (tax_domicile_weight >= 0),
-    professional_activity_weight INTEGER NOT NULL
-        CHECK (professional_activity_weight >= 0),
-    income_weight INTEGER NOT NULL CHECK (income_weight >= 0),
+    country_of_residence_weight NUMERIC(5, 2) NOT NULL CHECK (country_of_residence_weight BETWEEN 0 AND 5),
+    nationality_weight NUMERIC(5, 2) NOT NULL CHECK (nationality_weight BETWEEN 0 AND 5),
+    tax_domicile_weight NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_weight BETWEEN 0 AND 5),
+    professional_activity_weight NUMERIC(5, 2) NOT NULL
+        CHECK (professional_activity_weight BETWEEN 0 AND 5),
+    income_weight NUMERIC(5, 2) NOT NULL CHECK (income_weight BETWEEN 0 AND 5),
     created_by_officer_id INTEGER NOT NULL REFERENCES officers(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (country_of_residence_weight + nationality_weight +
@@ -165,8 +165,8 @@ CREATE TABLE risk_assessments (
     -- Not sure about this one. Do we support changing a clients data after they have been added?
     input_snapshot JSONB NOT NULL
         CHECK (jsonb_typeof(input_snapshot) = 'object' AND input_snapshot <> '{}'::jsonb),
-    CHECK (preliminary OR final_score IS NOT NULL),
-    CHECK (decision = 'pending' OR (NOT preliminary AND final_score IS NOT NULL))
+    -- Missing CPI requires manual review, with no fabricated calculated score.
+    CHECK (decision = 'pending' OR NOT preliminary)
 );
 
 CREATE INDEX risk_assessments_client_time_idx
@@ -178,10 +178,10 @@ CREATE INDEX risk_assessments_weights_version_idx
 -- A shared primary key enforces at most one factor record per assessment.
 CREATE TABLE evaluated_risk_factors (
     risk_assessment_id INTEGER PRIMARY KEY REFERENCES risk_assessments(id),
-    country_of_residence_risk NUMERIC(5, 2) NOT NULL
+    country_of_residence_risk NUMERIC(5, 2)
         CHECK (country_of_residence_risk BETWEEN 0 AND 5),
-    nationality_risk NUMERIC(5, 2) NOT NULL CHECK (nationality_risk BETWEEN 0 AND 5),
-    tax_domicile_risk NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_risk BETWEEN 0 AND 5),
+    nationality_risk NUMERIC(5, 2) CHECK (nationality_risk BETWEEN 0 AND 5),
+    tax_domicile_risk NUMERIC(5, 2) CHECK (tax_domicile_risk BETWEEN 0 AND 5),
     professional_activity_risk NUMERIC(5, 2) NOT NULL
         CHECK (professional_activity_risk BETWEEN 0 AND 5),
     income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 5)

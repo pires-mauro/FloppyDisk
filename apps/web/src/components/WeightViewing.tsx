@@ -120,8 +120,9 @@ function parseWeights(
     const value = rawWeights[key]
     if (
       (typeof value === 'number' || typeof value === 'string') &&
-      Number.isInteger(Number(value)) &&
-      Number(value) >= 1 &&
+      String(value).trim() !== '' &&
+      Number.isFinite(Number(value)) &&
+      Number(value) >= 0 &&
       Number(value) <= 5
     ) {
       weights[key] = String(value)
@@ -258,7 +259,10 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
 
   const isEmployeeIdValid = /^\d{10}$/.test(employeeId)
   const isWeightComplete =
-    isEmployeeIdValid && riskFactors.every(([key]) => weights[key] !== '')
+    isEmployeeIdValid && riskFactors.every(([key]) => weights[key] !== '' &&
+      Number.isFinite(Number(weights[key])) && Number(weights[key]) >= 0 && Number(weights[key]) <= 5 &&
+      Math.abs(Number(weights[key]) * 100 - Math.round(Number(weights[key]) * 100)) < 1e-8) &&
+    riskFactors.reduce((sum, [key]) => sum + Number(weights[key]), 0) > 0
   const hasWeightChanges =
     savedWeights === null ||
     riskFactors.some(([key]) => weights[key] !== savedWeights[key])
@@ -537,7 +541,7 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
         <div className="weight-editor-heading">
           <div>
             <h3>Create a new version</h3>
-            <p>Set a weight from 1 to 5 for each factor, then save the draft.</p>
+            <p>Set weights from 0 to 5 with up to two decimal places. At least one must be positive. Weights are normalized when scoring.</p>
             <p className="data-view-note">
               The API accepts changes only for officer IDs marked as admin.
               This ID field does not authenticate the person submitting it.
@@ -603,17 +607,16 @@ export function WeightViewing({ countries }: { countries: Country[] }) {
             <label className="weight-editor-row" key={key} htmlFor={`weight-${key}`}>
               <span className="weight-editor-index">{String(index + 1).padStart(2, '0')}</span>
               <span className="weight-editor-label">{label}</span>
-              <select
+              <input
+                type="number"
+                min={0}
+                max={5}
+                step={0.01}
                 id={`weight-${key}`}
                 value={weights[key]}
                 onChange={(event) => updateWeight(key, event.target.value)}
                 aria-label={`${label} weight`}
-              >
-                <option value="">Select weight</option>
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <option value={value} key={value}>{value}</option>
-                ))}
-              </select>
+              />
             </label>
           ))}
         </div>

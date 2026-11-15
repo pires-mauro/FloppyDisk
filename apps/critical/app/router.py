@@ -12,7 +12,7 @@ router = APIRouter()
 
 class RiskEvaluationRequest(BaseModel):
     weights: dict[str, float]
-    scores: dict[str, float]
+    scores: dict[str, float | None]
     # Temporary screening inputs until the OpenSanctions integration is ready.
     pepConfirmed: bool = False
     sanctionsMatch: bool = False
@@ -31,8 +31,11 @@ class RiskEvaluationRequest(BaseModel):
         total_weight = sum(self.weights.values())
         if not math.isfinite(total_weight) or total_weight <= 0:
             raise ValueError("At least one risk factor must have a positive weight.")
+        country_factors = {'country_of_residence', 'nationality', 'tax_domicile'}
+        if any(value is None and key not in country_factors for key, value in self.scores.items()):
+            raise ValueError('Only country factors can have missing CPI scores.')
         if any(
-            not math.isfinite(value) or value < 0 or value > 5
+            value is not None and (not math.isfinite(value) or value < 0 or value > 5)
             for value in self.scores.values()
         ):
             raise ValueError("Scores must be finite numbers between 0 and 5.")

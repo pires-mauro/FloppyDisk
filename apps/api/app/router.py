@@ -75,8 +75,8 @@ RISK_FACTORS = (
 
 
 def _call_risk_service(
-    weights: dict[str, int],
-    scores: dict[str, float],
+    weights: dict[str, float],
+    scores: dict[str, float | None],
     *,
     pep_confirmed: bool,
     sanctions_match: bool,
@@ -126,25 +126,25 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         raise HTTPException(status_code=409, detail="No saved scoring configuration is available")
 
     weight_values = configuration.weights.model_dump()
-    service_weights: dict[str, int] = {}
-    score_values: dict[str, float] = {}
-    factor_details: list[tuple[str, str, str, int, float]] = []
+    service_weights: dict[str, float] = {}
+    score_values: dict[str, float | None] = {}
+    factor_details: list[tuple[str, str, str, float, float | None]] = []
     for factor_key, service_key, label, client_field in RISK_FACTORS:
         value = getattr(request, client_field)
         factor_scores = configuration.risk_values.get(factor_key, {})
-        if value not in factor_scores:
+        if value not in factor_scores and service_key not in {'country_of_residence', 'nationality', 'tax_domicile'}:
             raise HTTPException(
                 status_code=422,
                 detail=f"No saved risk value is configured for {label}: {value}.",
             )
-        score_values[service_key] = factor_scores[value]
+        score_values[service_key] = factor_scores.get(value)
         service_weights[service_key] = weight_values[factor_key]
         factor_details.append((
             service_key,
             label,
             value,
             weight_values[factor_key],
-            factor_scores[value],
+            factor_scores.get(value),
         ))
 
     calculation = _call_risk_service(
@@ -163,12 +163,16 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         )
         for service_key, label, value, weight, factor_score in factor_details
     ]
+    missing_cpi = [f'{label}: {value}' for _, label, value, _, score in factor_details if score is None]
+    override_reason = calculation.overrideReason
+    if missing_cpi and calculation.tier == 'Medium Risk':
+        override_reason = f'Missing CPI: {", ".join(missing_cpi)}; manual review required'
 
     assessment = RiskReviewResponse(
         score=calculation.score,
         tier=calculation.tier,
         weightVersion=configuration.version,
-        overrideReason=calculation.overrideReason,
+        overrideReason=override_reason,
         factors=factors,
     )
     return assessment

@@ -14,12 +14,12 @@ type RiskFactorResult = {
   label: string
   value: string
   weight: number
-  score: number
-  contribution: number
+  score: number | null
+  contribution: number | null
 }
 
 type Evaluation = {
-  score: number
+  score: number | null
   tier: RiskTier
   weightVersion: number | string
   overrideReason: string | null
@@ -106,8 +106,7 @@ export function RiskReview({
         if (
           !result ||
           !('score' in result) ||
-          typeof result.score !== 'number' ||
-          !Number.isFinite(result.score) ||
+          (result.score !== null && (typeof result.score !== 'number' || !Number.isFinite(result.score))) ||
           !('weightVersion' in result) ||
           (typeof result.weightVersion !== 'string' && typeof result.weightVersion !== 'number') ||
           !('tier' in result) ||
@@ -130,9 +129,9 @@ export function RiskReview({
                   'weight' in factor &&
                   typeof factor.weight === 'number' &&
                   'score' in factor &&
-                  typeof factor.score === 'number' &&
+                  (typeof factor.score === 'number' || factor.score === null) &&
                   'contribution' in factor &&
-                  typeof factor.contribution === 'number',
+                  (typeof factor.contribution === 'number' || factor.contribution === null),
               )
             : []
         setEvaluation({
@@ -291,7 +290,8 @@ export function RiskReview({
           </div>
           {evaluation?.overrideReason && (
             <div className="red-flag-banner" role="alert">
-              AUTOMATIC HIGH RISK OVERRIDE: {evaluation.overrideReason} Hit Detected
+              {evaluation.tier === 'High Risk' ? 'AUTOMATIC HIGH RISK OVERRIDE: ' : 'MANUAL REVIEW REQUIRED: '}
+              {evaluation.overrideReason}
             </div>
           )}
           <div className="risk-result-symbol" aria-hidden="true">
@@ -321,7 +321,7 @@ export function RiskReview({
         {evaluation && !loading && (
           <>
             <p className="risk-score-value">
-              {formatScore(evaluation.score)} <span>/ 5</span>
+              {evaluation.score === null ? 'Unavailable' : formatScore(evaluation.score)} <span>/ 5</span>
             </p>
             <p className="risk-score-tier">{evaluation.tier}</p>
             <p className="risk-score-status">
@@ -345,8 +345,8 @@ export function RiskReview({
                       <td>{factor.label}</td>
                       <td>{factor.value}</td>
                       <td>{factor.weight}</td>
-                      <td>{factor.score}</td>
-                      <td>{factor.contribution.toFixed(2)}</td>
+                      <td>{factor.score ?? 'CPI unavailable'}</td>
+                      <td>{factor.contribution?.toFixed(2) ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

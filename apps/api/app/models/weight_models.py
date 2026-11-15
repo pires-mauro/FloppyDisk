@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 Factor = Literal['country_weight', 'nationality_weight', 'tax_domicile_weight',
                  'professional_activity_weight', 'income_weight']
-Rating = Annotated[int, Field(strict=True, ge=1, le=5)]
+Rating = Annotated[float, Field(ge=0, le=5, allow_inf_nan=False, multiple_of=0.01)]
 RiskValue = Annotated[float, Field(ge=0, le=5, allow_inf_nan=False, multiple_of=0.01)]
 
 
@@ -17,6 +17,12 @@ class FactorWeights(BaseModel):
     tax_domicile_weight: Rating
     professional_activity_weight: Rating
     income_weight: Rating
+
+    @model_validator(mode='after')
+    def require_positive_total(self):
+        if sum(self.model_dump().values()) <= 0:
+            raise ValueError('At least one weight must be positive')
+        return self
 
 
 class WeightUpdate(BaseModel):
@@ -44,7 +50,7 @@ class WeightUpdate(BaseModel):
 class WeightUpdateRequest(BaseModel):
 
     employee_id: str
-    weights: dict[str, int] | None = None
+    weights: dict[str, Rating] | None = None
     risk_values: dict[str, dict[str, RiskValue | None]] | None = None
 
     @field_validator("employee_id")
@@ -57,16 +63,18 @@ class WeightUpdateRequest(BaseModel):
     @field_validator("weights")
     @classmethod
     def validate_legacy_weights(
-        cls, weights: dict[str, int] | None
-    ) -> dict[str, int] | None:
+        cls, weights: dict[str, float] | None
+    ) -> dict[str, float] | None:
         if weights is not None and not weights:
             raise ValueError("Provide at least one risk-factor weight.")
         if weights is not None and any(not name.strip() for name in weights):
             raise ValueError("Risk-factor names cannot be empty.")
         if weights is not None and any(
-            weight < 1 or weight > 5 for weight in weights.values()
+            weight < 0 or weight > 5 for weight in weights.values()
         ):
-            raise ValueError("Risk-factor weights must be integers between 1 and 5.")
+            raise ValueError("Risk-factor weights must be numbers between 0 and 5.")
+        if weights is not None and sum(weights.values()) <= 0:
+            raise ValueError('At least one weight must be positive')
         return weights
 
     @field_validator("risk_values")

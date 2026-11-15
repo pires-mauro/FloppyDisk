@@ -2,7 +2,7 @@ from app.models.model import RiskCalculationResult
 
 
 def evaluate_risk(
-    weights: dict[str, float], scores: dict[str, float], *,
+    weights: dict[str, float], scores: dict[str, float | None], *,
     pep_confirmed: bool = False, sanctions_match: bool = False,
 ) -> RiskCalculationResult:
     """ This function evaluates the risk score of a client based on the provided weights. 
@@ -16,6 +16,19 @@ def evaluate_risk(
         float: The calculated risk score a value between 0 and 5, 
         where 0 indicates low risk and 5 indicates high risk.
     """
+
+    missing = [key for key, value in scores.items() if value is None]
+    if missing:
+        red_flags = ' / '.join(
+            reason for reason, matched in [('Sanctions', sanctions_match), ('PEP', pep_confirmed)]
+            if matched
+        )
+        return RiskCalculationResult(
+            score=None,
+            tier='High Risk' if red_flags else 'Medium Risk',
+            overrideReason=red_flags or f'Missing CPI: {", ".join(missing)}; manual review required',
+            contributions={key: None for key in weights},
+        )
 
     total_weight = sum(weights.values())
     score = sum(

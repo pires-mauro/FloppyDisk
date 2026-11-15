@@ -11,20 +11,20 @@ class RiskReviewRequest(ClientDetails):
 class RiskFactorResult(BaseModel):
     label: str
     value: str
-    weight: int
-    score: float = Field(ge=0, le=5, allow_inf_nan=False)
-    contribution: float
+    weight: float
+    score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
+    contribution: float | None
 
 
 class RiskCalculationResult(BaseModel):
-    score: float = Field(ge=0, le=5, allow_inf_nan=False)
+    score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     overrideReason: str | None = None
-    contributions: dict[str, float]
+    contributions: dict[str, float | None]
 
 
 class RiskReviewResponse(BaseModel):
-    score: float = Field(ge=0, le=5, allow_inf_nan=False)
+    score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     weightVersion: str
     overrideReason: str | None = None

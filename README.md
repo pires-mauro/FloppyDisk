@@ -384,11 +384,38 @@ def get_connection():
 Risk values and calculated scores use a 0-5 scale. Risk values accept up to two
 decimal places. Tier thresholds remain unchanged pending BA confirmation:
 Low Risk is 0 <= score < 2.50, Medium Risk is 2.50 <= score < 3.75, and High
-Risk is 3.75 <= score <= 5. Category weights remain integers from 1 to 5.
+Risk is 3.75 <= score <= 5. Category weights use 0-5 with up to two decimal
+places and a positive total. The analyst's percentages are multiplied by 5:
+residence 1.50 (30%), nationality 0.50 (10%), tax domicile 1.00 (20%),
+profession 1.25 (25%), and income 0.75 (15%). The calculator normalizes these
+relative weights, preserving the percentages exactly.
 The initial schema migration defines the 0-5 database constraints. Editing an
 already-applied migration does not update an existing database: its constraints
 must be updated separately, or the schema recreated on an empty development
 database. Existing configuration values and historical decisions are unchanged.
+
+The default configuration in migration 006 now uses `Scoring_Values.xlsx`:
+CPI2025 country risk is `5 * (1 - CPI / 100)` for residence, nationality and tax
+domicile. 179 of the application's 193 UN countries have CPI values; the other
+14 trigger manual review with an unavailable score, not a zero/default risk.
+The source's Hong Kong, Taiwan and Kosovo rows are retained in the import but
+excluded from the application's UN-country selections. Income risks are
+2, 1, 1.5, 3 for the four ascending brackets (the BA confirmed the last is
+100k+). Profession risks are Standard 1, Cash-intensive 3.5, High-risk 5.
+Missing CPI does not bypass a PEP/sanctions rejection. Manual review preserves
+the unavailable score and original configuration version when completed.
+As requested, these changes edit migrations 001 and 006 instead of adding a
+new migration. Already-applied migrations are skipped by the migration runner.
+For an existing development database, explicitly reapply 006 to update the
+required column types/constraints and create a new analyst configuration version
+while keeping prior versions and decisions. In PowerShell from the repo root:
+
+```powershell
+Get-Content -Raw apps/api/migrations/006_default_scoring_configuration.sql | docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1
+```
+
+Rebuild the API and critical containers for the corresponding code changes.
+No existing database is reset automatically.
 
 The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
 loads the current configuration, calls `critical`, and returns the score, tier,

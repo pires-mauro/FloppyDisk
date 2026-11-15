@@ -32,11 +32,12 @@ type RiskFactorResult = {
   label: string
   value: string
   weight: number
-  score: number
-  contribution: number
+  score: number | null
+  contribution: number | null
 }
 
 type Evaluation = {
+  manualReviewReason: string | null
   score: number | null
   tier: string | null
   weightVersion: string | number | null
@@ -59,9 +60,9 @@ function parseConfiguration(payload: unknown): SavedConfiguration {
     const values = payload.risk_values[factor.key]
     if (
       typeof weight !== 'number' ||
-      weight < 1 ||
+      weight < 0 ||
       weight > 5 ||
-      !Number.isInteger(weight) ||
+      !Number.isFinite(weight) ||
       !isRecord(values)
     ) {
       throw new Error(`Saved configuration is missing ${factor.label} values.`)
@@ -82,6 +83,9 @@ function parseConfiguration(payload: unknown): SavedConfiguration {
     }
   }
 
+  if (Object.values(weights).reduce((sum, weight) => sum + weight, 0) <= 0) {
+    throw new Error('At least one saved weight must be positive.')
+  }
   return {
     weights,
     riskValues,
@@ -103,7 +107,7 @@ function evaluateClient(
     const value = client[factor.clientField]
     if (!value) continue
     const score = configuration.riskValues[factor.key][value]
-    if (score === undefined) {
+    if (score === undefined && (factor.key === 'professional_activity_weight' || factor.key === 'income_weight')) {
       throw new Error(`No saved risk value is configured for ${factor.label}: ${value}.`)
     }
     factors.push({
@@ -114,24 +118,31 @@ function evaluateClient(
           ? value
           : countries.find((country) => country.code === value)?.name ?? value,
       weight: configuration.weights[factor.key],
-      score,
+      score: score ?? null,
       contribution: 0,
     })
   }
 
   const totalWeight = factors.reduce((total, factor) => total + factor.weight, 0)
+  const missingCountries = factors.filter((factor) => factor.score === null)
+  const manualReviewReason = missingCountries.length
+    ? `Missing CPI: ${missingCountries.map((factor) => `${factor.label}: ${factor.value}`).join(', ')}.`
+    : null
   const score =
-    totalWeight === 0
+    totalWeight === 0 || manualReviewReason
       ? null
       : factors.reduce(
-          (total, factor) => total + factor.weight * factor.score,
+          (total, factor) => total + factor.weight * (factor.score ?? 0),
           0,
         ) / totalWeight
 
   if (score !== null) {
     for (const factor of factors) {
-      factor.contribution = (factor.weight * factor.score) / totalWeight
+      factor.contribution = (factor.weight * (factor.score ?? 0)) / totalWeight
     }
+  }
+  if (manualReviewReason) {
+    for (const factor of factors) factor.contribution = null
   }
 
   const tier =
@@ -144,8 +155,9 @@ function evaluateClient(
           : 'High Risk'
 
   return {
+    manualReviewReason,
     score,
-    tier: client.pepConfirmed || client.sanctionsMatch ? 'High Risk' : tier,
+    tier: client.pepConfirmed || client.sanctionsMatch ? 'High Risk' : manualReviewReason ? 'Medium Risk' : tier,
     weightVersion: configuration.version,
     factors,
   }
@@ -233,6 +245,12 @@ export function RiskPreview({
       )}
       {evaluation && (
         <>
+          {evaluation.manualReviewReason && (
+            <div className="data-view-alert" role="alert">
+              <strong>Manual review required</strong>
+              <span>{evaluation.manualReviewReason}</span>
+            </div>
+          )}
           <div className="risk-preview-summary">
             <div><span>Score</span><strong>{evaluation.score?.toFixed(2) ?? '—'} / 5</strong></div>
             <div><span>Risk tier</span><strong>{evaluation.tier || '—'}</strong></div>
@@ -249,8 +267,8 @@ export function RiskPreview({
                     <td>{factor.label}</td>
                     <td>{factor.value}</td>
                     <td>{factor.weight}</td>
-                    <td>{factor.score}</td>
-                    <td>{factor.contribution.toFixed(2)}</td>
+                    <td>{factor.score ?? 'CPI unavailable'}</td>
+                    <td>{factor.contribution?.toFixed(2) ?? '—'}</td>
                   </tr>
                 ))}
                 {evaluation.factors.length === 0 && (
