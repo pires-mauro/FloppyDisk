@@ -105,7 +105,7 @@ CREATE TABLE nationality_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -113,7 +113,7 @@ CREATE TABLE tax_domicile_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -121,7 +121,7 @@ CREATE TABLE country_of_residence_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -129,7 +129,7 @@ CREATE TABLE income_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     income_range_id INTEGER NOT NULL REFERENCES income_ranges(id),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, income_range_id)
 );
 
@@ -137,7 +137,7 @@ CREATE TABLE professional_activity_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     professional_category_id INTEGER NOT NULL REFERENCES professional_categories(id),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, professional_category_id)
 );
 
@@ -153,7 +153,7 @@ CREATE TABLE risk_assessments (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id),
     officer_id INTEGER NOT NULL REFERENCES officers(id),
-    final_score NUMERIC(3, 2) CHECK (final_score BETWEEN 1 AND 5),
+    final_score NUMERIC(3, 2) CHECK (final_score BETWEEN 0 AND 5),
     assigned_tier risk_tier_enum NOT NULL,
     officer_comment VARCHAR(500),
     decision assessment_decision_enum NOT NULL DEFAULT 'pending',
@@ -179,12 +179,12 @@ CREATE INDEX risk_assessments_weights_version_idx
 CREATE TABLE evaluated_risk_factors (
     risk_assessment_id INTEGER PRIMARY KEY REFERENCES risk_assessments(id),
     country_of_residence_risk NUMERIC(5, 2) NOT NULL
-        CHECK (country_of_residence_risk BETWEEN 0 AND 100),
-    nationality_risk NUMERIC(5, 2) NOT NULL CHECK (nationality_risk BETWEEN 0 AND 100),
-    tax_domicile_risk NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_risk BETWEEN 0 AND 100),
+        CHECK (country_of_residence_risk BETWEEN 0 AND 5),
+    nationality_risk NUMERIC(5, 2) NOT NULL CHECK (nationality_risk BETWEEN 0 AND 5),
+    tax_domicile_risk NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_risk BETWEEN 0 AND 5),
     professional_activity_risk NUMERIC(5, 2) NOT NULL
-        CHECK (professional_activity_risk BETWEEN 0 AND 100),
-    income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 100)
+        CHECK (professional_activity_risk BETWEEN 0 AND 5),
+    income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 5)
 );
 
 COMMIT;

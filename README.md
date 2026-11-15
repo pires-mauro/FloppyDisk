@@ -381,6 +381,15 @@ def get_connection():
 
 ### Assessment review and final submission
 
+Risk values and calculated scores use a 0-5 scale. Risk values accept up to two
+decimal places. Tier thresholds remain unchanged pending BA confirmation:
+Low Risk is 0 <= score < 2.50, Medium Risk is 2.50 <= score < 3.75, and High
+Risk is 3.75 <= score <= 5. Category weights remain integers from 1 to 5.
+The initial schema migration defines the 0-5 database constraints. Editing an
+already-applied migration does not update an existing database: its constraints
+must be updated separately, or the schema recreated on an empty development
+database. Existing configuration values and historical decisions are unchanged.
+
 The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
 loads the current configuration, calls `critical`, and returns the score, tier,
 factor breakdown, and configuration version. This

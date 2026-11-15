@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 Factor = Literal['country_weight', 'nationality_weight', 'tax_domicile_weight',
                  'professional_activity_weight', 'income_weight']
 Rating = Annotated[int, Field(strict=True, ge=1, le=5)]
+RiskValue = Annotated[float, Field(ge=0, le=5, allow_inf_nan=False, multiple_of=0.01)]
 
 
 class FactorWeights(BaseModel):
@@ -31,7 +32,7 @@ class WeightUpdate(BaseModel):
     employee_id: str = Field(pattern=r'^[0-9]{10}$')
     password: SecretStr = Field(min_length=1, max_length=1024)
     weights: FactorWeights | None = None
-    risk_values: dict[Factor, dict[str, Rating | None]] | None = None
+    risk_values: dict[Factor, dict[str, RiskValue | None]] | None = None
 
     @model_validator(mode='after')
     def require_update(self):
@@ -44,7 +45,7 @@ class WeightUpdateRequest(BaseModel):
 
     employee_id: str
     weights: dict[str, int] | None = None
-    risk_values: dict[str, dict[str, int | None]] | None = None
+    risk_values: dict[str, dict[str, RiskValue | None]] | None = None
 
     @field_validator("employee_id")
     @classmethod
@@ -71,8 +72,8 @@ class WeightUpdateRequest(BaseModel):
     @field_validator("risk_values")
     @classmethod
     def validate_risk_values(
-        cls, risk_values: dict[str, dict[str, int | None]] | None
-    ) -> dict[str, dict[str, int | None]] | None:
+        cls, risk_values: dict[str, dict[str, float | None]] | None
+    ) -> dict[str, dict[str, float | None]] | None:
         if risk_values is not None:
             if not risk_values or not any(risk_values.values()):
                 raise ValueError("Provide at least one risk-factor risk value.")
@@ -85,11 +86,11 @@ class WeightUpdateRequest(BaseModel):
             ):
                 raise ValueError("Risk-value choices cannot be empty.")
             if any(
-                risk is not None and (risk < 1 or risk > 5)
+                risk is not None and (risk < 0 or risk > 5)
                 for choices in risk_values.values()
                 for risk in choices.values()
             ):
-                raise ValueError("Risk values must be integers between 1 and 5.")
+                raise ValueError("Risk values must be numbers between 0 and 5.")
         return risk_values
 
     @model_validator(mode="after")
@@ -105,4 +106,4 @@ class WeightVersion(BaseModel):
 
 class ScoringConfiguration(WeightVersion):
     weights: FactorWeights
-    risk_values: dict[Factor, dict[str, Rating]]
+    risk_values: dict[Factor, dict[str, RiskValue]]

@@ -12,19 +12,19 @@ class RiskFactorResult(BaseModel):
     label: str
     value: str
     weight: int
-    score: int
+    score: float = Field(ge=0, le=5, allow_inf_nan=False)
     contribution: float
 
 
 class RiskCalculationResult(BaseModel):
-    score: float = Field(ge=1, le=5)
+    score: float = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     overrideReason: str | None = None
     contributions: dict[str, float]
 
 
 class RiskReviewResponse(BaseModel):
-    score: float = Field(ge=1, le=5)
+    score: float = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     weightVersion: str
     overrideReason: str | None = None

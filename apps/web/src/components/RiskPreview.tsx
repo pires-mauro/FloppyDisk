@@ -72,11 +72,11 @@ function parseConfiguration(payload: unknown): SavedConfiguration {
     for (const [choice, score] of Object.entries(values)) {
       if (
         typeof score !== 'number' ||
-        !Number.isInteger(score) ||
-        score < 1 ||
+        !Number.isFinite(score) ||
+        score < 0 ||
         score > 5
       ) {
-        throw new Error(`Saved ${factor.label} values must be between 1 and 5.`)
+        throw new Error(`Saved ${factor.label} values must be between 0 and 5.`)
       }
       riskValues[factor.key][choice] = score
     }

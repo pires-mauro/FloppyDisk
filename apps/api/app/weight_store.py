@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS weight_configuration (
 
 def merge_weight_values(
     current_weights: dict[str, int],
-    current_risk_values: dict[str, dict[str, int]],
+    current_risk_values: dict[str, dict[str, float]],
     weights: dict[str, int] | None,
-    risk_values: dict[str, dict[str, int | None]] | None,
-) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+    risk_values: dict[str, dict[str, float | None]] | None,
+) -> tuple[dict[str, int], dict[str, dict[str, float]]]:
     merged_weights = dict(current_weights)
     merged_risk_values = {
         factor: dict(values) for factor, values in current_risk_values.items()
@@ -75,7 +75,7 @@ def get_latest_weights() -> dict[str, Any] | None:
 def update_weights(
     employee_id: str,
     weights: dict[str, int] | None,
-    risk_values: dict[str, dict[str, int | None]] | None,
+    risk_values: dict[str, dict[str, float | None]] | None,
 ) -> dict[str, Any]:
     with _connect() as connection:
         connection.execute(_CREATE_TABLE)

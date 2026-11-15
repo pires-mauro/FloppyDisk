@@ -76,7 +76,7 @@ RISK_FACTORS = (
 
 def _call_risk_service(
     weights: dict[str, int],
-    scores: dict[str, int],
+    scores: dict[str, float],
     *,
     pep_confirmed: bool,
     sanctions_match: bool,
@@ -127,8 +127,8 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
 
     weight_values = configuration.weights.model_dump()
     service_weights: dict[str, int] = {}
-    score_values: dict[str, int] = {}
-    factor_details: list[tuple[str, str, str, int, int]] = []
+    score_values: dict[str, float] = {}
+    factor_details: list[tuple[str, str, str, int, float]] = []
     for factor_key, service_key, label, client_field in RISK_FACTORS:
         value = getattr(request, client_field)
         factor_scores = configuration.risk_values.get(factor_key, {})

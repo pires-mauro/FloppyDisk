@@ -44,9 +44,9 @@ def get_configuration(version: int | None = None):
             ''', (row[0],)).fetchall()
             values = {}
             for choice, score in rows:
-                if score != int(score) or not 1 <= score <= 5:
-                    raise ConfigurationConflict(f'Stored risk for {key}/{choice} must be an integer from 1 to 5')
-                values[choice] = int(score)
+                if not score.is_finite() or not 0 <= score <= 5:
+                    raise ConfigurationConflict(f'Stored risk for {key}/{choice} must be a number from 0 to 5')
+                values[choice] = float(score)
             risk_values[key] = values
         return ScoringConfiguration(version=str(row[0]),
                                     weights=FactorWeights(**dict(zip(RULES, row[1:]))),
