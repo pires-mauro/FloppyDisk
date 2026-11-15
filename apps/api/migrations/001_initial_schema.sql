@@ -1,6 +1,4 @@
 -- FloppyDisk: initial PostgreSQL 17 schema.
--- Apply ONCE to an empty application database with psql ON_ERROR_STOP=1.
--- Run 002_reference_data.sql afterwards. No existing objects are dropped.
 BEGIN;
 
 CREATE TYPE marital_status_enum AS ENUM (
@@ -164,9 +162,9 @@ CREATE TABLE risk_assessments (
 
     -- Not sure about this one. Do we support changing a clients data after they have been added?
     input_snapshot JSONB NOT NULL
-        CHECK (jsonb_typeof(input_snapshot) = 'object' AND input_snapshot <> '{}'::jsonb),
-    -- Missing CPI requires manual review, with no fabricated calculated score.
-    CHECK (decision = 'pending' OR NOT preliminary)
+        CHECK (jsonb_typeof(input_snapshot) = 'object' AND input_snapshot <> '{}'::jsonb)
+    -- preliminary describes the scoring source, independently of the decision.
+    -- Missing CPI may also leave final_score unavailable after manual review.
 );
 
 CREATE INDEX risk_assessments_client_time_idx

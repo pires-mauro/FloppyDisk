@@ -27,12 +27,13 @@ def list_clients():
                    initcap(a.assigned_tier::text) || ' Risk' AS risk_tier,
                    a.decision AS final_decision, o.internal_id AS officer_id,
                    o.name AS officer_name,
+                   a.preliminary,
                    a.evaluation_time AS submission_date
             FROM clients c
             JOIN countries country ON country.country_code = c.id_issuing_country_code
             JOIN LATERAL (
-                SELECT assigned_tier, decision, officer_id, evaluation_time
-                FROM risk_assessments WHERE client_id = c.id AND NOT preliminary
+                SELECT assigned_tier, decision, officer_id, evaluation_time, preliminary
+                FROM risk_assessments WHERE client_id = c.id
                 ORDER BY evaluation_time DESC, id DESC LIMIT 1
             ) a ON TRUE
             JOIN officers o ON o.id = a.officer_id
@@ -86,9 +87,9 @@ def save_client(form: ClientSubmission, assessment: RiskReviewResponse) -> int:
         assessment_id = conn.execute('''
             INSERT INTO risk_assessments (client_id, officer_id, final_score, assigned_tier,
                 officer_comment, decision, preliminary, weights_version, input_snapshot)
-            VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s) RETURNING id
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
         ''', (client[0], officer_id, assessment.score, assessment.tier.split()[0].lower(),
-              form.officerComment or None, decision[form.finalDecision], int(assessment.weightVersion),
+              form.officerComment or None, decision[form.finalDecision], assessment.preliminary, int(assessment.weightVersion),
               Jsonb(snapshot))).fetchone()[0]
         # The server creates these five factors in this fixed order. The full
         # weights, contributions and override reason are retained in the snapshot.
@@ -101,7 +102,7 @@ def save_client(form: ClientSubmission, assessment: RiskReviewResponse) -> int:
         return client[0]
 
 
-def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> None:
+def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> bool:
     """Record the officer's outcome for a saved pending review without rescoring."""
     with get_connection() as conn:
         officer_id = authenticate_officer(
@@ -112,8 +113,8 @@ def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> No
         if client is None:
             raise ValueError('Client does not exist')
         previous = conn.execute('''
-            SELECT id, decision, input_snapshot FROM risk_assessments
-            WHERE client_id = %s AND NOT preliminary
+            SELECT id, decision, input_snapshot, preliminary FROM risk_assessments
+            WHERE client_id = %s
             ORDER BY evaluation_time DESC, id DESC LIMIT 1 FOR UPDATE
         ''', (client_id,)).fetchone()
         if previous is None or previous[1] != 'manual_review':
@@ -128,7 +129,7 @@ def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> No
         saved_id = conn.execute('''
             INSERT INTO risk_assessments (client_id, officer_id, final_score, assigned_tier,
                 officer_comment, decision, preliminary, weights_version, input_snapshot)
-            SELECT client_id, %s, final_score, assigned_tier, %s, %s, FALSE,
+            SELECT client_id, %s, final_score, assigned_tier, %s, %s, preliminary,
                    weights_version, %s FROM risk_assessments WHERE id = %s
             RETURNING id
         ''', (officer_id, decision.officerComment or None,
@@ -142,3 +143,4 @@ def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> No
                    tax_domicile_risk, professional_activity_risk, income_risk
             FROM evaluated_risk_factors WHERE risk_assessment_id = %s
         ''', (saved_id, previous[0]))
+        return previous[3]

@@ -17,6 +17,7 @@ class RiskFactorResult(BaseModel):
 
 
 class RiskCalculationResult(BaseModel):
+    scoringRuleVersion: str = 'unknown'
     score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     overrideReason: str | None = None
@@ -24,6 +25,9 @@ class RiskCalculationResult(BaseModel):
 
 
 class RiskReviewResponse(BaseModel):
+    preliminary: bool = False
+    scoringSource: Literal['critical', 'cached'] = 'critical'
+    scoringRuleVersion: str = 'unknown'
     score: float | None = Field(ge=0, le=5, allow_inf_nan=False)
     tier: Literal["Low Risk", "Medium Risk", "High Risk"]
     weightVersion: str

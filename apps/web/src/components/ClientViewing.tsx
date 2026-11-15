@@ -7,6 +7,7 @@ const clientColumns = [
   ['issuing_country', 'Issuing country'],
   ['risk_tier', 'Risk tier'],
   ['final_decision', 'Final decision'],
+  ['assessment_status', 'Scoring status'],
   ['officer_id', 'Officer ID'],
   ['officer_name', 'Officer name'],
   ['submission_date', 'Submission date'],
@@ -43,7 +44,9 @@ function parseClients(payload: unknown): ClientRecord[] {
   return records.map((record) => {
     const fields = record as Record<string, unknown>
     return Object.fromEntries(
-      clientColumns.map(([key]) => [key, getStringField(fields, key)]),
+      clientColumns.map(([key]) => [key, key === 'assessment_status'
+        ? fields.preliminary === true ? 'Preliminary' : fields.preliminary === false ? 'Confirmed' : 'Unknown'
+        : getStringField(fields, key)]),
     ) as ClientRecord
   })
 }
@@ -135,6 +138,7 @@ export function ClientViewing() {
             key={reviewClient.internal_client_id}
             clientId={reviewClient.internal_client_id}
             clientName={reviewClient.client_name || 'Client'}
+            preliminary={reviewClient.assessment_status === 'Preliminary'}
             onCancel={() => setReviewClient(null)}
             onSaved={() => {
               setReviewClient(null)

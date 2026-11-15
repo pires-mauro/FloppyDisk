@@ -1,10 +1,3 @@
--- Source: Scoring_Values.xlsx, CPI2025!A5:E186 and Scoring Engine!A1:I10.
--- Source SHA256: 0548bbff2a9db7d3f632ee5313fc0155fdddbf6e7f68f54c1130d024f5fa6b8d
--- CPI risk = 5 * (1 - CPI / 100). All three country factors use this value.
--- Percentages are multiplied by 5: weights 1.5, 0.5, 1.0, 1.25, 0.75, total 5.
--- The BA confirmed the final income risk applies to 100k+ (source label typo).
--- Entries outside the UN-country list are retained below but not seeded.
--- Missing CPI entries are intentionally left unconfigured for manual review.
 BEGIN;
 
 ALTER TABLE weights
@@ -21,8 +14,7 @@ ALTER TABLE risk_assessments
     DROP CONSTRAINT IF EXISTS risk_assessments_check1,
     DROP CONSTRAINT IF EXISTS risk_assessments_final_score_check,
     DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check,
-    ADD CONSTRAINT risk_assessments_final_score_check CHECK (final_score BETWEEN 0 AND 5),
-    ADD CONSTRAINT risk_assessments_decision_finalized_check CHECK (decision = 'pending' OR NOT preliminary);
+    ADD CONSTRAINT risk_assessments_final_score_check CHECK (final_score BETWEEN 0 AND 5);
 
 ALTER TABLE evaluated_risk_factors
     ALTER COLUMN country_of_residence_risk DROP NOT NULL,

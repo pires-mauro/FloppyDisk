@@ -5,7 +5,7 @@ type RiskReviewProps = {
   client: ClientForm
   countries: Country[]
   onBack: () => void
-  onDecisionSaved: () => void
+  onDecisionSaved: (preliminary: boolean) => void
 }
 
 type RiskTier = 'Low Risk' | 'Medium Risk' | 'High Risk'
@@ -19,6 +19,8 @@ type RiskFactorResult = {
 }
 
 type Evaluation = {
+  preliminary: boolean
+  scoringRuleVersion: string
   score: number | null
   tier: RiskTier
   weightVersion: number | string
@@ -105,6 +107,7 @@ export function RiskReview({
         const result = payload !== null && typeof payload === 'object' ? payload : null
         if (
           !result ||
+          !('preliminary' in result) || typeof result.preliminary !== 'boolean' ||
           !('score' in result) ||
           (result.score !== null && (typeof result.score !== 'number' || !Number.isFinite(result.score))) ||
           !('weightVersion' in result) ||
@@ -135,6 +138,9 @@ export function RiskReview({
               )
             : []
         setEvaluation({
+          preliminary: result.preliminary,
+          scoringRuleVersion: 'scoringRuleVersion' in result && typeof result.scoringRuleVersion === 'string'
+            ? result.scoringRuleVersion : 'unknown',
           score,
           tier: result.tier,
           weightVersion: result.weightVersion,
@@ -187,11 +193,12 @@ export function RiskReview({
       if (
         payload === null ||
         typeof payload !== 'object' ||
-        !('internal_client_id' in payload)
+        !('internal_client_id' in payload) ||
+        !('preliminary' in payload) || typeof payload.preliminary !== 'boolean'
       ) {
         throw new Error('The API did not confirm a saved client record.')
       }
-      onDecisionSaved()
+      onDecisionSaved(payload.preliminary)
     } catch (requestError) {
       setDecisionError(
         requestError instanceof Error
@@ -320,12 +327,19 @@ export function RiskReview({
         )}
         {evaluation && !loading && (
           <>
+            {evaluation.preliminary && (
+              <div className="data-view-alert" role="status">
+                <strong>Preliminary assessment</strong>
+                <span>The scoring service is unavailable. Cached rules were used; the saved record will remain preliminary.</span>
+              </div>
+            )}
             <p className="risk-score-value">
               {evaluation.score === null ? 'Unavailable' : formatScore(evaluation.score)} <span>/ 5</span>
             </p>
             <p className="risk-score-tier">{evaluation.tier}</p>
             <p className="risk-score-status">
               Weight version: {evaluation.weightVersion}
+              {` · Rules: ${evaluation.scoringRuleVersion}`}
               {evaluation.overrideReason && ` · Override: ${evaluation.overrideReason}`}
             </p>
             <div className="risk-preview-table-wrap">
@@ -353,7 +367,7 @@ export function RiskReview({
               </table>
             </div>
             <p className="risk-score-status">
-              Score and risk-tier classification supplied by the backend.
+              Score and risk-tier classification supplied by the backend using {evaluation.preliminary ? 'cached rules' : 'the scoring service'}.
             </p>
           </>
         )}

@@ -449,8 +449,51 @@ breakdown and override reason.
 
 The temporary PEP/sanctions controls are passed to `critical`, which applies
 their test override and returns its reason. They are placeholders for future
-OpenSanctions screening. If `critical` is unavailable, new client submissions
-cannot be saved. Pending manual reviews can still be completed.
+OpenSanctions screening.
+
+### Scoring-service downtime
+
+The API's `app/cached_scoring.py` contains a local fallback copy of the rules
+in `critical/app/scoring.py`. Both report the same rule version. Keep the two
+copies in sync when changing scoring logic; shared packaging is deferred.
+The API calls `critical` first (five-second timeout). Connection failures,
+timeouts, and HTTP 5xx responses use the bundled rules with the latest saved
+database configuration. HTTP 4xx responses and malformed scoring results remain
+errors rather than being hidden by the fallback. No executable formula is
+downloaded; `/v1/formula/` only returns informational metadata.
+
+Fallback responses include `preliminary: true`, `scoringSource: cached`, and
+`scoringRuleVersion`. On submission, the API calculates again and saves the
+result and preliminary flag together. This final calculation determines the
+saved status, even if service availability changed since the review screen.
+The assessment snapshot retains the rule version and source. Client viewing
+shows both preliminary and confirmed records, labelled with their scoring
+status. Completing a manual review accepts the officer's outcome and preserves
+the original preliminary flag without calling `critical` again.
+
+Each request tries `critical` again, so new submissions use confirmed results
+once it recovers. Previously saved preliminary records are not automatically
+recalculated or promoted to confirmed; that follow-up workflow is separate.
+When live OpenSanctions screening is added, fallback results must continue to
+indicate that live screening could not be completed.
+
+Rebuild both services with `docker compose build api critical`. The original
+service directories, requirements files, and Docker build contexts are retained;
+no shared package or additional dependency is required.
+
+As with the earlier changes, existing applied migrations are not rerun. An
+existing database needs the old constraint prohibiting preliminary decisions
+removed before using this feature (no data is deleted):
+
+```sql
+ALTER TABLE risk_assessments
+    DROP CONSTRAINT IF EXISTS risk_assessments_check,
+    DROP CONSTRAINT IF EXISTS risk_assessments_check1,
+    DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check;
+```
+
+The updated migrations 001 and 006 already handle this for a new database or
+when configuration migration 006 is explicitly reapplied.
 
 This project is under active development as part of a university assignment.
 

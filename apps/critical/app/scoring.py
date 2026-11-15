@@ -1,5 +1,7 @@
 from app.models.model import RiskCalculationResult
 
+SCORING_RULE_VERSION = 'weighted-risk-v1'
+
 
 def evaluate_risk(
     weights: dict[str, float], scores: dict[str, float | None], *,
@@ -24,6 +26,7 @@ def evaluate_risk(
             if matched
         )
         return RiskCalculationResult(
+            scoringRuleVersion=SCORING_RULE_VERSION,
             score=None,
             tier='High Risk' if red_flags else 'Medium Risk',
             overrideReason=red_flags or f'Missing CPI: {", ".join(missing)}; manual review required',
@@ -49,6 +52,7 @@ def evaluate_risk(
         if matched
     ) or None
     return RiskCalculationResult(
+        scoringRuleVersion=SCORING_RULE_VERSION,
         score=round(score, 2),
         tier='High Risk' if override_reason else tier,
         overrideReason=override_reason,

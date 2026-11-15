@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
+from app.cached_scoring import calculate_risk
 
 from app.db.clients import (
     DuplicateClient,
@@ -80,7 +81,7 @@ def _call_risk_service(
     *,
     pep_confirmed: bool,
     sanctions_match: bool,
-) -> RiskCalculationResult:
+) -> tuple[RiskCalculationResult, bool]:
     base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
     request = Request(
         f"{base_url}/v1/evaluation/",
@@ -98,10 +99,12 @@ def _call_risk_service(
             payload = json.loads(response.read().decode("utf-8"))
     except URLHTTPError as exc:
         logger.warning("Risk service returned HTTP %s", exc.code)
+        if 500 <= exc.code < 600:
+            return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
         raise HTTPException(status_code=502, detail="Risk calculation service returned an error") from exc
     except (URLError, TimeoutError, OSError) as exc:
         logger.warning("Risk service is unavailable: %s", exc)
-        raise HTTPException(status_code=503, detail="Risk calculation service is unavailable") from exc
+        return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("Risk service returned an invalid response")
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid response") from exc
@@ -113,7 +116,15 @@ def _call_risk_service(
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid evaluation") from exc
     if result.contributions.keys() != weights.keys():
         raise HTTPException(status_code=502, detail="Risk calculation service returned an incomplete factor breakdown")
-    return result
+    return result, False
+
+
+def _cached_risk(weights, scores, pep_confirmed, sanctions_match) -> tuple[RiskCalculationResult, bool]:
+    logger.warning('Using bundled scoring rules; assessment will be preliminary')
+    result = RiskCalculationResult.model_validate(calculate_risk(
+        weights, scores, pep_confirmed=pep_confirmed, sanctions_match=sanctions_match,
+    ))
+    return result, True
 
 
 @router.post("/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"])
@@ -147,7 +158,7 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
             factor_scores.get(value),
         ))
 
-    calculation = _call_risk_service(
+    calculation, preliminary = _call_risk_service(
         service_weights,
         score_values,
         pep_confirmed=request.pepConfirmed,
@@ -169,6 +180,9 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         override_reason = f'Missing CPI: {", ".join(missing_cpi)}; manual review required'
 
     assessment = RiskReviewResponse(
+        preliminary=preliminary,
+        scoringSource='cached' if preliminary else 'critical',
+        scoringRuleVersion=calculation.scoringRuleVersion,
         score=calculation.score,
         tier=calculation.tier,
         weightVersion=configuration.version,
@@ -226,7 +240,7 @@ def post_client(submission: ClientSubmission):
 @router.post('/v1/clients/{client_id}/decision', response_model=ClientDecisionSaved, tags=['Clients'])
 def submit_manual_review(client_id: int, decision: ManualReviewDecision):
     try:
-        complete_manual_review(client_id, decision)
+        preliminary = complete_manual_review(client_id, decision)
     except OfficerAuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except ValueError as exc:
@@ -234,6 +248,7 @@ def submit_manual_review(client_id: int, decision: ManualReviewDecision):
     return ClientDecisionSaved(
         internal_client_id=client_id,
         finalDecision=decision.finalDecision,
+        preliminary=preliminary,
     )
 
 

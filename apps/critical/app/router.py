@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from app.models.model import HealthCheckResponse, RiskCalculationResult
 from pydantic import BaseModel, model_validator
 
-from app.scoring import evaluate_risk
+from app.scoring import SCORING_RULE_VERSION, evaluate_risk
 
 router = APIRouter()
 
@@ -59,9 +59,13 @@ def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
     )
 
 
-# This is used to cache the formula to evaluate the risk, 
-# if critical component is down, we can still evaluate 
-# the risk using the cached formula
+# Informational metadata only. The API has a local fallback copy of the rules;
+# no returned expression is executed by the API.
 @router.get("/v1/formula/", tags=["Formula"])
-def get_formula() -> str:
-    return "sum(weights[key] * scores.get(key, 0) for key in weights) / sum(weights.values()); returns 0 when total weight is 0"
+def get_formula() -> dict:
+    return {
+        'scoringRuleVersion': SCORING_RULE_VERSION,
+        'formula': 'sum(weight * score) / sum(weights)',
+        'thresholds': {'medium': 2.5, 'high': 3.75},
+        'missingCpi': 'manual_review',
+    }

@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 
-export function ManualReviewDecision({ clientId, clientName, onSaved, onCancel }: {
+export function ManualReviewDecision({ clientId, clientName, preliminary, onSaved, onCancel }: {
   clientId: string
   clientName: string
+  preliminary: boolean
   onSaved: () => void
   onCancel: () => void
 }) {
@@ -45,6 +46,7 @@ export function ManualReviewDecision({ clientId, clientName, onSaved, onCancel }
     <form className="risk-summary-card" onSubmit={(event) => void submit(event)}>
       <h3>Complete manual review: {clientName} (#{clientId})</h3>
       <p>Record the review outcome. The original risk score and configuration version are retained.</p>
+      {preliminary && <p role="status">This assessment used cached scoring rules. Recording the manual decision keeps its preliminary status.</p>}
       <fieldset disabled={saving}>
         <div className="field">
           <label className="field-label" htmlFor="manual-review-officer">Officer internal ID</label>

@@ -92,6 +92,7 @@ class ManualReviewDecision(BaseModel):
 
 
 class ClientDecisionSaved(BaseModel):
+    preliminary: bool
     internal_client_id: int
     finalDecision: Literal['approve', 'decline']
 
@@ -105,6 +106,7 @@ class ClientCreated(BaseModel):
 
 
 class ClientOverview(BaseModel):
+    preliminary: bool
     internal_client_id: int
     client_name: str
     issuing_country: str
