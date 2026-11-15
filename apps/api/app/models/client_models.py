@@ -1,8 +1,7 @@
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 CountryCode = Annotated[str, Field(pattern=r'^[A-Z]{2}$')]
@@ -18,7 +17,7 @@ class ClientAddress(BaseModel):
     postalCode: str | None = None
 
 
-class ClientSubmission(BaseModel):
+class ClientDetails(BaseModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
         json_schema_extra={
@@ -40,10 +39,6 @@ class ClientSubmission(BaseModel):
                 "officerId": "1234567890",
                 "pepConfirmed": False,
                 "sanctionsMatch": False,
-                "riskScore": 2,
-                "riskTier": "Low Risk",
-                "finalDecision": "approve",
-                "weightVersion": 1,
             }
         },
     )
@@ -63,14 +58,9 @@ class ClientSubmission(BaseModel):
     dialPrefix: Annotated[str, Field(pattern=r'^\+[1-9][0-9]{0,2}$')]
     phoneNumber: Annotated[str, Field(min_length=9, max_length=9, pattern=r'^[0-9]{9}$')]
     officerId: Annotated[str, Field(min_length=10, max_length=10, pattern=r'^[0-9]{10}$')]
-    officerPassword: SecretStr = Field(min_length=1, max_length=1024)
     officerComment: Annotated[str, Field(max_length=500)] = ''
     pepConfirmed: bool = False
     sanctionsMatch: bool = False
-    riskScore: Decimal = Field(ge=1, le=5, decimal_places=2)
-    riskTier: Literal['Low Risk', 'Medium Risk', 'High Risk']
-    finalDecision: Literal['approve', 'manual_review', 'decline']
-    weightVersion: int = Field(gt=0)
 
     @field_validator('dateOfBirth', mode='before')
     @classmethod
@@ -88,12 +78,22 @@ class ClientSubmission(BaseModel):
             raise ValueError('Client must be at least 18 years of age')
         return value
 
-    @model_validator(mode='after')
-    def validate_decision(self):
-        expected = {'Low Risk': 'approve', 'Medium Risk': 'manual_review', 'High Risk': 'decline'}
-        if self.finalDecision != expected[self.riskTier]:
-            raise ValueError('Final decision does not match the reviewed risk tier')
-        return self
+
+class ClientSubmission(ClientDetails):
+    officerPassword: SecretStr = Field(min_length=1, max_length=1024)
+    finalDecision: Literal['approve', 'manual_review', 'decline']
+
+
+class ManualReviewDecision(BaseModel):
+    officerId: Annotated[str, Field(pattern=r'^[0-9]{10}$')]
+    officerPassword: SecretStr = Field(min_length=1, max_length=1024)
+    finalDecision: Literal['approve', 'decline']
+    officerComment: Annotated[str, Field(max_length=500)] = ''
+
+
+class ClientDecisionSaved(BaseModel):
+    internal_client_id: int
+    finalDecision: Literal['approve', 'decline']
 
 
 class DuplicateResponse(BaseModel):

@@ -13,6 +13,9 @@ router = APIRouter()
 class RiskEvaluationRequest(BaseModel):
     weights: dict[str, float]
     scores: dict[str, float]
+    # Temporary screening inputs until the OpenSanctions integration is ready.
+    pepConfirmed: bool = False
+    sanctionsMatch: bool = False
 
     @model_validator(mode="after")
     def validate_factors(self):
@@ -47,7 +50,10 @@ def health_check():
 #  if critical component is up
 @router.post("/v1/evaluation/", tags=["Evaluation"])
 def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
-    return evaluate_risk(request.weights, request.scores)
+    return evaluate_risk(
+        request.weights, request.scores,
+        pep_confirmed=request.pepConfirmed, sanctions_match=request.sanctionsMatch,
+    )
 
 
 # This is used to cache the formula to evaluate the risk, 

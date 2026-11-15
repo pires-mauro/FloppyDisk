@@ -1,26 +1,11 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from app.models.client_models import ClientDetails
 
 
-class RiskReviewRequest(BaseModel):
-    clientName: str
-    clientId: str = ""
-    dateOfBirth: str
-    countryOfResidence: str
-    taxDomicile: str
-    nationality: str
-    idIssuingCountry: str
-    annualIncome: str
-    profession: str
-    maritalStatus: str
-    email: str
-    dialPrefix: str
-    phoneNumber: str
-    officerId: str
-    officerComment: str = ""
-    pepConfirmed: bool = False
-    sanctionsMatch: bool = False
+class RiskReviewRequest(ClientDetails):
+    pass
 
 
 class RiskFactorResult(BaseModel):
@@ -44,3 +29,8 @@ class RiskReviewResponse(BaseModel):
     weightVersion: str
     overrideReason: str | None = None
     factors: list[RiskFactorResult]
+
+
+class FinalizedClient(RiskReviewResponse):
+    internal_client_id: int
+    finalDecision: Literal['approve', 'manual_review', 'decline']

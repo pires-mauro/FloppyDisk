@@ -379,6 +379,43 @@ def get_connection():
 
 ## Project Status
 
+### Assessment review and final submission
+
+The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
+loads the current configuration, calls `critical`, and returns the score, tier,
+factor breakdown, and configuration version. This
+step writes no client or assessment records to SQL.
+
+When the officer submits the final decision, the frontend sends the same client
+details, officer credentials, and decision to `POST /api/v1/clients`.
+The API calls `critical` again with the latest saved configuration and checks
+that the decision matches the recalculated tier. If the tier now requires a
+different decision, submission returns HTTP 409 and the officer must refresh
+the risk review. The API authenticates the officer and saves the address, client,
+assessment and evaluated factors in one transaction. The response confirms the
+client ID and saved assessment. Browser-supplied scores, tiers and configuration
+versions are not used. The saved record uses the version actually used for the
+final calculation, including any weights or risk values saved since preview.
+
+For a medium-risk client, submitting "Submit for Manual Review" saves the client
+with a pending manual-review decision. In Client viewing, "Complete review"
+allows an officer to approve or decline it. This calls
+`POST /api/v1/clients/{client_id}/decision`, which checks the saved pending state
+and officer credentials, then accepts the reviewer's outcome without calling
+`critical` or enforcing an automatic tier decision. It appends a decision record,
+preserving the original scoring version, score, breakdown and initial submission.
+Concurrent or repeated completion is blocked once the pending review is resolved.
+
+No assessment tokens or signing keys are used. No database migration is needed
+for this flow: the existing factor table
+stores the evaluated scores and `input_snapshot.assessment` retains the full
+breakdown and override reason.
+
+The temporary PEP/sanctions controls are passed to `critical`, which applies
+their test override and returns its reason. They are placeholders for future
+OpenSanctions screening. If `critical` is unavailable, new client submissions
+cannot be saved. Pending manual reviews can still be completed.
+
 This project is under active development as part of a university assignment.
 
 **Current Setup:**

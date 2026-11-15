@@ -14,6 +14,7 @@ from app.db.clients import (
     client_exists,
     list_clients,
     save_client,
+    complete_manual_review,
 )
 from app.db.reference_data import (
     get_countries,
@@ -27,10 +28,11 @@ from app.db.weights import (
 )
 from app.officer_auth import OfficerAuthenticationError, OfficerNotAdmin
 from app.models.client_models import (
-    ClientCreated,
     ClientOverview,
     ClientSubmission,
     DuplicateResponse,
+    ManualReviewDecision,
+    ClientDecisionSaved,
 )
 from app.models.health_models import HealthCheckResponse
 from app.models.reference_data_models import (
@@ -43,6 +45,7 @@ from app.models.risk import (
     RiskFactorResult,
     RiskReviewRequest,
     RiskReviewResponse,
+    FinalizedClient,
 )
 from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
 
@@ -161,13 +164,14 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         for service_key, label, value, weight, factor_score in factor_details
     ]
 
-    return RiskReviewResponse(
+    assessment = RiskReviewResponse(
         score=calculation.score,
         tier=calculation.tier,
         weightVersion=configuration.version,
         overrideReason=calculation.overrideReason,
         factors=factors,
     )
+    return assessment
 
 
 
@@ -187,10 +191,19 @@ def get_clients():
     return list_clients()
 
 
-@router.post("/v1/clients", response_model=ClientCreated, status_code=201, tags=["Clients"])
+@router.post("/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"])
 def post_client(submission: ClientSubmission):
     try:
-        client_id = save_client(submission)
+        assessment = evaluate_risk(RiskReviewRequest.model_validate(submission.model_dump()))
+        expected_decision = {
+            'Low Risk': 'approve', 'Medium Risk': 'manual_review', 'High Risk': 'decline',
+        }[assessment.tier]
+        if submission.finalDecision != expected_decision:
+            raise HTTPException(
+                status_code=409,
+                detail='The recalculated risk tier requires a different decision. Refresh the risk assessment and review it again.',
+            )
+        client_id = save_client(submission, assessment)
     except OfficerAuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except DuplicateClient as exc:
@@ -199,7 +212,25 @@ def post_client(submission: ClientSubmission):
         raise HTTPException(status_code=422, detail="Unknown country or scoring version") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"internal_client_id": client_id}
+    return FinalizedClient(
+        **assessment.model_dump(),
+        internal_client_id=client_id,
+        finalDecision=submission.finalDecision,
+    )
+
+
+@router.post('/v1/clients/{client_id}/decision', response_model=ClientDecisionSaved, tags=['Clients'])
+def submit_manual_review(client_id: int, decision: ManualReviewDecision):
+    try:
+        complete_manual_review(client_id, decision)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ClientDecisionSaved(
+        internal_client_id=client_id,
+        finalDecision=decision.finalDecision,
+    )
 
 
 @router.get(

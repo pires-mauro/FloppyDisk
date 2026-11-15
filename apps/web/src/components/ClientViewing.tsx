@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ManualReviewDecision } from './ManualReviewDecision'
 
 const clientColumns = [
   ['internal_client_id', 'Internal client ID'],
@@ -58,6 +59,8 @@ export function ClientViewing() {
   )
   const [sortOrder, setSortOrder] = useState<'ascending' | 'descending'>('ascending')
   const [retry, setRetry] = useState(0)
+  const [reviewClient, setReviewClient] = useState<ClientRecord | null>(null)
+  const [reviewSaved, setReviewSaved] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -126,6 +129,20 @@ export function ClientViewing() {
       </div>
 
       <div className="data-view-card">
+        {reviewSaved && <p className="decision-success" role="status">Manual review outcome saved.</p>}
+        {reviewClient?.internal_client_id && (
+          <ManualReviewDecision
+            key={reviewClient.internal_client_id}
+            clientId={reviewClient.internal_client_id}
+            clientName={reviewClient.client_name || 'Client'}
+            onCancel={() => setReviewClient(null)}
+            onSaved={() => {
+              setReviewClient(null)
+              setReviewSaved(true)
+              setRetry((attempt) => attempt + 1)
+            }}
+          />
+        )}
         <div className="data-view-toolbar">
           <label className="data-search">
             <span className="sr-only">Search client records</span>
@@ -205,7 +222,15 @@ export function ClientViewing() {
                 visibleClients.map((client, index) => (
                   <tr key={client.internal_client_id || index}>
                     {clientColumns.map(([key]) => (
-                      <td key={key}>{client[key] || '—'}</td>
+                      <td key={key}>
+                        {client[key] || '—'}
+                        {key === 'final_decision' && client.final_decision === 'manual_review' && (
+                          <button type="button" className="retry-button" onClick={() => {
+                            setReviewSaved(false)
+                            setReviewClient(client)
+                          }}>Complete review</button>
+                        )}
+                      </td>
                     ))}
                   </tr>
                 ))}

@@ -1,7 +1,10 @@
 from app.models.model import RiskCalculationResult
 
 
-def evaluate_risk(weights: dict[str, float], scores: dict[str, float]) -> RiskCalculationResult:
+def evaluate_risk(
+    weights: dict[str, float], scores: dict[str, float], *,
+    pep_confirmed: bool = False, sanctions_match: bool = False,
+) -> RiskCalculationResult:
     """ This function evaluates the risk score of a client based on the provided weights. 
         The formula is as follows: 
             sum(weights[key] * scores[key] for key in weights) / sum(weights.values())
@@ -28,9 +31,13 @@ def evaluate_risk(weights: dict[str, float], scores: dict[str, float]) -> RiskCa
     else:
         tier = "High Risk"
 
+    override_reason = ' / '.join(
+        reason for reason, matched in [('Sanctions', sanctions_match), ('PEP', pep_confirmed)]
+        if matched
+    ) or None
     return RiskCalculationResult(
         score=round(score, 2),
-        tier=tier,
-        overrideReason=None,
+        tier='High Risk' if override_reason else tier,
+        overrideReason=override_reason,
         contributions={key: (weights[key] / total_weight) * scores.get(key, 0) for key in weights},
     )
