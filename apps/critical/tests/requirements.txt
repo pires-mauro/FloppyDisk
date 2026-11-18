@@ -1,0 +1,5 @@
+# Test-only dependencies; application dependencies remain unchanged.
+-r ../requirements.txt
+# The application imports model_validator, which requires Pydantic v2.
+pydantic>=2,<3
+httpx>=0.28,<0.29
