@@ -18,8 +18,8 @@ services:
         - db
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: ./apps
+      dockerfile: api/Dockerfile
     container_name: bank-onboarding-api
     ports:
       - "8000:8000"
@@ -30,8 +30,8 @@ services:
     restart: unless-stopped
   critical:
     build:
-      context: ./apps/critical
-      dockerfile: Dockerfile
+      context: ./apps
+      dockerfile: critical/Dockerfile
     container_name: bank-onboarding-critical
     ports:
       - "2424:8000"

@@ -5,7 +5,7 @@ type RiskReviewProps = {
   client: ClientForm
   countries: Country[]
   onBack: () => void
-  onDecisionSaved: () => void
+  onDecisionSaved: (preliminary: boolean) => void
 }
 
 type RiskTier = 'Low Risk' | 'Medium Risk' | 'High Risk'
@@ -14,12 +14,14 @@ type RiskFactorResult = {
   label: string
   value: string
   weight: number
-  score: number
-  contribution: number
+  score: number | null
+  contribution: number | null
 }
 
 type Evaluation = {
-  score: number
+  preliminary: boolean
+  scoringRuleVersion: string
+  score: number | null
   tier: RiskTier
   weightVersion: number | string
   overrideReason: string | null
@@ -80,33 +82,20 @@ export function RiskReview({
 
       try {
         const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
-        const configurationResponse = await fetch(`${apiUrl}/v1/weights/latest`, {
-          signal: controller.signal,
-        })
-        if (!configurationResponse.ok) {
-          throw new Error(await getErrorMessage(configurationResponse))
-        }
-        const configuration: unknown = await configurationResponse.json()
-        const configurationVersion =
-          configuration !== null &&
-          typeof configuration === 'object' &&
-          'version' in configuration &&
-          (typeof configuration.version === 'string' ||
-            typeof configuration.version === 'number') &&
-          Number.isInteger(Number(configuration.version)) &&
-          Number(configuration.version) > 0
-            ? Number(configuration.version)
-            : null
-        if (configurationVersion === null) {
-          throw new Error('The saved weight configuration has an invalid version.')
-        }
-
         const riskClient: Partial<ClientForm> = { ...client }
         delete riskClient.officerPassword
         const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(riskClient),
+          body: JSON.stringify({
+            ...riskClient,
+            address: {
+              street: client.addressStreet,
+              city: client.addressCity,
+              houseNumber: client.addressHouseNumber || null,
+              postalCode: client.addressPostalCode || null,
+            },
+          }),
           signal: controller.signal,
         })
 
@@ -115,38 +104,21 @@ export function RiskReview({
         }
 
         const payload: unknown = await response.json()
-        const result =
-          typeof payload === 'number'
-            ? {
-                score: payload,
-                tier: null,
-                weightVersion: null,
-                overrideReason: null,
-                factors: [],
-              }
-            : payload !== null && typeof payload === 'object'
-              ? payload
-              : null
+        const result = payload !== null && typeof payload === 'object' ? payload : null
         if (
           !result ||
+          !('preliminary' in result) || typeof result.preliminary !== 'boolean' ||
           !('score' in result) ||
-          typeof result.score !== 'number' ||
-          !Number.isFinite(result.score)
+          (result.score !== null && (typeof result.score !== 'number' || !Number.isFinite(result.score))) ||
+          !('weightVersion' in result) ||
+          (typeof result.weightVersion !== 'string' && typeof result.weightVersion !== 'number') ||
+          !('tier' in result) ||
+          (result.tier !== 'Low Risk' && result.tier !== 'Medium Risk' && result.tier !== 'High Risk')
         ) {
           throw new Error('The backend returned an invalid risk score.')
         }
 
         const score = result.score
-        const tier =
-          'tier' in result && (result.tier === 'Low Risk' ||
-            result.tier === 'Medium Risk' ||
-            result.tier === 'High Risk')
-            ? result.tier
-            : score < 2.5
-              ? 'Low Risk'
-              : score < 3.75
-                ? 'Medium Risk'
-                : 'High Risk'
         const factors =
           'factors' in result && Array.isArray(result.factors)
             ? result.factors.filter(
@@ -160,30 +132,23 @@ export function RiskReview({
                   'weight' in factor &&
                   typeof factor.weight === 'number' &&
                   'score' in factor &&
-                  typeof factor.score === 'number' &&
+                  (typeof factor.score === 'number' || factor.score === null) &&
                   'contribution' in factor &&
-                  typeof factor.contribution === 'number',
+                  (typeof factor.contribution === 'number' || factor.contribution === null),
               )
             : []
         setEvaluation({
+          preliminary: result.preliminary,
+          scoringRuleVersion: 'scoringRuleVersion' in result && typeof result.scoringRuleVersion === 'string'
+            ? result.scoringRuleVersion : 'unknown',
           score,
-          tier: client.pepConfirmed || client.sanctionsMatch ? 'High Risk' : tier,
-          weightVersion:
-            'weightVersion' in result &&
-            (typeof result.weightVersion === 'string' ||
-              typeof result.weightVersion === 'number')
-              ? result.weightVersion
-              : configurationVersion,
+          tier: result.tier,
+          weightVersion: result.weightVersion,
           overrideReason:
-            client.pepConfirmed || client.sanctionsMatch
-              ? [
-                  client.sanctionsMatch && 'Sanctions',
-                  client.pepConfirmed && 'PEP',
-                ].filter(Boolean).join(' / ')
-              : 'overrideReason' in result &&
-                  typeof result.overrideReason === 'string'
-                ? result.overrideReason
-                : null,
+            'overrideReason' in result &&
+            typeof result.overrideReason === 'string'
+              ? result.overrideReason
+              : null,
           factors,
         })
       } catch (requestError) {
@@ -219,10 +184,7 @@ export function RiskReview({
             houseNumber: client.addressHouseNumber || null,
             postalCode: client.addressPostalCode || null,
           },
-          riskScore: evaluation.score,
-          riskTier: evaluation.tier,
           finalDecision: decision,
-          weightVersion: evaluation.weightVersion,
         }),
       })
       if (!response.ok) throw new Error(await getErrorMessage(response))
@@ -231,11 +193,12 @@ export function RiskReview({
       if (
         payload === null ||
         typeof payload !== 'object' ||
-        !('internal_client_id' in payload)
+        !('internal_client_id' in payload) ||
+        !('preliminary' in payload) || typeof payload.preliminary !== 'boolean'
       ) {
         throw new Error('The API did not confirm a saved client record.')
       }
-      onDecisionSaved()
+      onDecisionSaved(payload.preliminary)
     } catch (requestError) {
       setDecisionError(
         requestError instanceof Error
@@ -332,12 +295,10 @@ export function RiskReview({
             <span className="result-label">RISK ASSESSMENT</span>
             <h3>Calculated client score</h3>
           </div>
-          {(client.pepConfirmed || client.sanctionsMatch) && (
+          {evaluation?.overrideReason && (
             <div className="red-flag-banner" role="alert">
-              AUTOMATIC HIGH RISK OVERRIDE: {[
-                client.sanctionsMatch && 'Sanctions',
-                client.pepConfirmed && 'PEP',
-              ].filter(Boolean).join(' / ')} Hit Detected
+              {evaluation.tier === 'High Risk' ? 'AUTOMATIC HIGH RISK OVERRIDE: ' : 'MANUAL REVIEW REQUIRED: '}
+              {evaluation.overrideReason}
             </div>
           )}
           <div className="risk-result-symbol" aria-hidden="true">
@@ -366,12 +327,19 @@ export function RiskReview({
         )}
         {evaluation && !loading && (
           <>
+            {evaluation.preliminary && (
+              <div className="data-view-alert" role="status">
+                <strong>Preliminary assessment</strong>
+                <span>The scoring service is unavailable. Cached rules were used; the saved record will remain preliminary.</span>
+              </div>
+            )}
             <p className="risk-score-value">
-              {formatScore(evaluation.score)} <span>/ 5</span>
+              {evaluation.score === null ? 'Unavailable' : formatScore(evaluation.score)} <span>/ 5</span>
             </p>
             <p className="risk-score-tier">{evaluation.tier}</p>
             <p className="risk-score-status">
               Weight version: {evaluation.weightVersion}
+              {` · Rules: ${evaluation.scoringRuleVersion}`}
               {evaluation.overrideReason && ` · Override: ${evaluation.overrideReason}`}
             </p>
             <div className="risk-preview-table-wrap">
@@ -391,15 +359,15 @@ export function RiskReview({
                       <td>{factor.label}</td>
                       <td>{factor.value}</td>
                       <td>{factor.weight}</td>
-                      <td>{factor.score}</td>
-                      <td>{factor.contribution.toFixed(2)}</td>
+                      <td>{factor.score ?? 'CPI unavailable'}</td>
+                      <td>{factor.contribution?.toFixed(2) ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="risk-score-status">
-              Score and risk-tier classification supplied by the backend.
+              Score and risk-tier classification supplied by the backend using {evaluation.preliminary ? 'cached rules' : 'the scoring service'}.
             </p>
           </>
         )}
@@ -412,6 +380,19 @@ export function RiskReview({
           <p>Client data is saved only when a final decision is submitted.</p>
         </div>
         {decisionError && <p className="decision-error" role="alert">{decisionError}</p>}
+        {decisionError && (
+          <button
+            type="button"
+            className="retry-button"
+            disabled={loading || decisionLoading}
+            onClick={() => {
+              setDecisionError('')
+              setRetry((attempt) => attempt + 1)
+            }}
+          >
+            Refresh risk assessment
+          </button>
+        )}
         <div className="decision-actions">
           <button
             type="button"

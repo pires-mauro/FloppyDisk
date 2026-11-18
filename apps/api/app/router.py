@@ -8,12 +8,15 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
+from onboarding_shared.scoring import calculate_risk
+from onboarding_shared.models import RiskEvaluationRequest
 
 from app.db.clients import (
     DuplicateClient,
     client_exists,
     list_clients,
     save_client,
+    complete_manual_review,
 )
 from app.db.reference_data import (
     get_countries,
@@ -27,10 +30,11 @@ from app.db.weights import (
 )
 from app.officer_auth import OfficerAuthenticationError, OfficerNotAdmin
 from app.models.client_models import (
-    ClientCreated,
     ClientOverview,
     ClientSubmission,
     DuplicateResponse,
+    ManualReviewDecision,
+    ClientDecisionSaved,
 )
 from app.models.health_models import HealthCheckResponse
 from app.models.reference_data_models import (
@@ -43,6 +47,7 @@ from app.models.risk import (
     RiskFactorResult,
     RiskReviewRequest,
     RiskReviewResponse,
+    FinalizedClient,
 )
 from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
 
@@ -72,21 +77,19 @@ RISK_FACTORS = (
 
 
 def _call_risk_service(
-    weights: dict[str, int],
-    scores: dict[str, int],
+    weights: dict[str, float],
+    scores: dict[str, float | None],
     *,
     pep_confirmed: bool,
     sanctions_match: bool,
-) -> RiskCalculationResult:
+) -> tuple[RiskCalculationResult, bool]:
     base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
     request = Request(
         f"{base_url}/v1/evaluation/",
-        data=json.dumps({
-            "weights": weights,
-            "scores": scores,
-            "pepConfirmed": pep_confirmed,
-            "sanctionsMatch": sanctions_match,
-        }).encode("utf-8"),
+        data=RiskEvaluationRequest(
+            weights=weights, scores=scores,
+            pepConfirmed=pep_confirmed, sanctionsMatch=sanctions_match,
+        ).model_dump_json().encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -95,10 +98,12 @@ def _call_risk_service(
             payload = json.loads(response.read().decode("utf-8"))
     except URLHTTPError as exc:
         logger.warning("Risk service returned HTTP %s", exc.code)
+        if 500 <= exc.code < 600:
+            return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
         raise HTTPException(status_code=502, detail="Risk calculation service returned an error") from exc
     except (URLError, TimeoutError, OSError) as exc:
         logger.warning("Risk service is unavailable: %s", exc)
-        raise HTTPException(status_code=503, detail="Risk calculation service is unavailable") from exc
+        return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("Risk service returned an invalid response")
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid response") from exc
@@ -110,7 +115,15 @@ def _call_risk_service(
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid evaluation") from exc
     if result.contributions.keys() != weights.keys():
         raise HTTPException(status_code=502, detail="Risk calculation service returned an incomplete factor breakdown")
-    return result
+    return result, False
+
+
+def _cached_risk(weights, scores, pep_confirmed, sanctions_match) -> tuple[RiskCalculationResult, bool]:
+    logger.warning('Using bundled scoring rules; assessment will be preliminary')
+    result = RiskCalculationResult.model_validate(calculate_risk(
+        weights, scores, pep_confirmed=pep_confirmed, sanctions_match=sanctions_match,
+    ))
+    return result, True
 
 
 @router.post("/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"])
@@ -123,28 +136,28 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         raise HTTPException(status_code=409, detail="No saved scoring configuration is available")
 
     weight_values = configuration.weights.model_dump()
-    service_weights: dict[str, int] = {}
-    score_values: dict[str, int] = {}
-    factor_details: list[tuple[str, str, str, int, int]] = []
+    service_weights: dict[str, float] = {}
+    score_values: dict[str, float | None] = {}
+    factor_details: list[tuple[str, str, str, float, float | None]] = []
     for factor_key, service_key, label, client_field in RISK_FACTORS:
         value = getattr(request, client_field)
         factor_scores = configuration.risk_values.get(factor_key, {})
-        if value not in factor_scores:
+        if value not in factor_scores and service_key not in {'country_of_residence', 'nationality', 'tax_domicile'}:
             raise HTTPException(
                 status_code=422,
                 detail=f"No saved risk value is configured for {label}: {value}.",
             )
-        score_values[service_key] = factor_scores[value]
+        score_values[service_key] = factor_scores.get(value)
         service_weights[service_key] = weight_values[factor_key]
         factor_details.append((
             service_key,
             label,
             value,
             weight_values[factor_key],
-            factor_scores[value],
+            factor_scores.get(value),
         ))
 
-    calculation = _call_risk_service(
+    calculation, preliminary = _call_risk_service(
         service_weights,
         score_values,
         pep_confirmed=request.pepConfirmed,
@@ -160,14 +173,22 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         )
         for service_key, label, value, weight, factor_score in factor_details
     ]
+    missing_cpi = [f'{label}: {value}' for _, label, value, _, score in factor_details if score is None]
+    override_reason = calculation.overrideReason
+    if missing_cpi and calculation.tier == 'Medium Risk':
+        override_reason = f'Missing CPI: {", ".join(missing_cpi)}; manual review required'
 
-    return RiskReviewResponse(
+    assessment = RiskReviewResponse(
+        preliminary=preliminary,
+        scoringSource='cached' if preliminary else 'critical',
+        scoringRuleVersion=calculation.scoringRuleVersion,
         score=calculation.score,
         tier=calculation.tier,
         weightVersion=configuration.version,
-        overrideReason=calculation.overrideReason,
+        overrideReason=override_reason,
         factors=factors,
     )
+    return assessment
 
 
 
@@ -187,10 +208,19 @@ def get_clients():
     return list_clients()
 
 
-@router.post("/v1/clients", response_model=ClientCreated, status_code=201, tags=["Clients"])
+@router.post("/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"])
 def post_client(submission: ClientSubmission):
     try:
-        client_id = save_client(submission)
+        assessment = evaluate_risk(RiskReviewRequest.model_validate(submission.model_dump()))
+        expected_decision = {
+            'Low Risk': 'approve', 'Medium Risk': 'manual_review', 'High Risk': 'decline',
+        }[assessment.tier]
+        if submission.finalDecision != expected_decision:
+            raise HTTPException(
+                status_code=409,
+                detail='The recalculated risk tier requires a different decision. Refresh the risk assessment and review it again.',
+            )
+        client_id = save_client(submission, assessment)
     except OfficerAuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except DuplicateClient as exc:
@@ -199,7 +229,26 @@ def post_client(submission: ClientSubmission):
         raise HTTPException(status_code=422, detail="Unknown country or scoring version") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"internal_client_id": client_id}
+    return FinalizedClient(
+        **assessment.model_dump(),
+        internal_client_id=client_id,
+        finalDecision=submission.finalDecision,
+    )
+
+
+@router.post('/v1/clients/{client_id}/decision', response_model=ClientDecisionSaved, tags=['Clients'])
+def submit_manual_review(client_id: int, decision: ManualReviewDecision):
+    try:
+        preliminary = complete_manual_review(client_id, decision)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ClientDecisionSaved(
+        internal_client_id=client_id,
+        finalDecision=decision.finalDecision,
+        preliminary=preliminary,
+    )
 
 
 @router.get(

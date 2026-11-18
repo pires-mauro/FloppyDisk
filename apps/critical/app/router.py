@@ -1,39 +1,11 @@
-import math
-
 from fastapi import APIRouter
 
 from app.models.model import HealthCheckResponse, RiskCalculationResult
-from pydantic import BaseModel, model_validator
+from onboarding_shared.models import RiskEvaluationRequest
 
-from app.scoring import evaluate_risk
+from app.scoring import SCORING_RULE_VERSION, evaluate_risk
 
 router = APIRouter()
-
-
-class RiskEvaluationRequest(BaseModel):
-    weights: dict[str, float]
-    scores: dict[str, float]
-
-    @model_validator(mode="after")
-    def validate_factors(self):
-        if not self.weights or self.weights.keys() != self.scores.keys():
-            raise ValueError("Provide matching non-empty weights and scores.")
-        if any(not key.strip() for key in self.weights):
-            raise ValueError("Risk factor names cannot be empty.")
-        if any(
-            not math.isfinite(value) or value < 0
-            for value in self.weights.values()
-        ):
-            raise ValueError("Weights must be finite, non-negative numbers.")
-        total_weight = sum(self.weights.values())
-        if not math.isfinite(total_weight) or total_weight <= 0:
-            raise ValueError("At least one risk factor must have a positive weight.")
-        if any(
-            not math.isfinite(value) or value < 1 or value > 5
-            for value in self.scores.values()
-        ):
-            raise ValueError("Scores must be finite numbers between 1 and 5.")
-        return self
 
 
 @router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
@@ -47,12 +19,19 @@ def health_check():
 #  if critical component is up
 @router.post("/v1/evaluation/", tags=["Evaluation"])
 def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
-    return evaluate_risk(request.weights, request.scores)
+    return evaluate_risk(
+        request.weights, request.scores,
+        pep_confirmed=request.pepConfirmed, sanctions_match=request.sanctionsMatch,
+    )
 
 
-# This is used to cache the formula to evaluate the risk, 
-# if critical component is down, we can still evaluate 
-# the risk using the cached formula
+# Informational metadata only. Both services use the shared scoring rules;
+# no returned expression is executed by the API.
 @router.get("/v1/formula/", tags=["Formula"])
-def get_formula() -> str:
-    return "sum(weights[key] * scores.get(key, 0) for key in weights) / sum(weights.values()); returns 0 when total weight is 0"
+def get_formula() -> dict:
+    return {
+        'scoringRuleVersion': SCORING_RULE_VERSION,
+        'formula': 'sum(weight * score) / sum(weights)',
+        'thresholds': {'medium': 2.5, 'high': 3.75},
+        'missingCpi': 'manual_review',
+    }

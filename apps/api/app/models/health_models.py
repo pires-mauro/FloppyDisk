@@ -1,6 +1,3 @@
-from pydantic import BaseModel
+from onboarding_shared.models import HealthCheckResponse
 
-
-class HealthCheckResponse(BaseModel):
-    status: str
-    service: str
+__all__ = ['HealthCheckResponse']

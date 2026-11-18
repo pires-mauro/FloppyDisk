@@ -1,6 +1,4 @@
 -- FloppyDisk: initial PostgreSQL 17 schema.
--- Apply ONCE to an empty application database with psql ON_ERROR_STOP=1.
--- Run 002_reference_data.sql afterwards. No existing objects are dropped.
 BEGIN;
 
 CREATE TYPE marital_status_enum AS ENUM (
@@ -89,12 +87,12 @@ CREATE TABLE clients (
 -- Weights are nonnegative relative weights; the calculator must normalize them.
 CREATE TABLE weights (
     version_number INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    country_of_residence_weight INTEGER NOT NULL CHECK (country_of_residence_weight >= 0),
-    nationality_weight INTEGER NOT NULL CHECK (nationality_weight >= 0),
-    tax_domicile_weight INTEGER NOT NULL CHECK (tax_domicile_weight >= 0),
-    professional_activity_weight INTEGER NOT NULL
-        CHECK (professional_activity_weight >= 0),
-    income_weight INTEGER NOT NULL CHECK (income_weight >= 0),
+    country_of_residence_weight NUMERIC(5, 2) NOT NULL CHECK (country_of_residence_weight BETWEEN 0 AND 5),
+    nationality_weight NUMERIC(5, 2) NOT NULL CHECK (nationality_weight BETWEEN 0 AND 5),
+    tax_domicile_weight NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_weight BETWEEN 0 AND 5),
+    professional_activity_weight NUMERIC(5, 2) NOT NULL
+        CHECK (professional_activity_weight BETWEEN 0 AND 5),
+    income_weight NUMERIC(5, 2) NOT NULL CHECK (income_weight BETWEEN 0 AND 5),
     created_by_officer_id INTEGER NOT NULL REFERENCES officers(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (country_of_residence_weight + nationality_weight +
@@ -105,7 +103,7 @@ CREATE TABLE nationality_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -113,7 +111,7 @@ CREATE TABLE tax_domicile_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -121,7 +119,7 @@ CREATE TABLE country_of_residence_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     country_code TEXT NOT NULL REFERENCES countries(country_code),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, country_code)
 );
 
@@ -129,7 +127,7 @@ CREATE TABLE income_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     income_range_id INTEGER NOT NULL REFERENCES income_ranges(id),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, income_range_id)
 );
 
@@ -137,7 +135,7 @@ CREATE TABLE professional_activity_risk (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
     professional_category_id INTEGER NOT NULL REFERENCES professional_categories(id),
-    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
+    risk_score NUMERIC(5, 2) NOT NULL CHECK (risk_score BETWEEN 0 AND 5),
     UNIQUE (weights_version, professional_category_id)
 );
 
@@ -153,7 +151,7 @@ CREATE TABLE risk_assessments (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id),
     officer_id INTEGER NOT NULL REFERENCES officers(id),
-    final_score NUMERIC(3, 2) CHECK (final_score BETWEEN 1 AND 5),
+    final_score NUMERIC(3, 2) CHECK (final_score BETWEEN 0 AND 5),
     assigned_tier risk_tier_enum NOT NULL,
     officer_comment VARCHAR(500),
     decision assessment_decision_enum NOT NULL DEFAULT 'pending',
@@ -164,9 +162,9 @@ CREATE TABLE risk_assessments (
 
     -- Not sure about this one. Do we support changing a clients data after they have been added?
     input_snapshot JSONB NOT NULL
-        CHECK (jsonb_typeof(input_snapshot) = 'object' AND input_snapshot <> '{}'::jsonb),
-    CHECK (preliminary OR final_score IS NOT NULL),
-    CHECK (decision = 'pending' OR (NOT preliminary AND final_score IS NOT NULL))
+        CHECK (jsonb_typeof(input_snapshot) = 'object' AND input_snapshot <> '{}'::jsonb)
+    -- preliminary describes the scoring source, independently of the decision.
+    -- Missing CPI may also leave final_score unavailable after manual review.
 );
 
 CREATE INDEX risk_assessments_client_time_idx
@@ -178,13 +176,13 @@ CREATE INDEX risk_assessments_weights_version_idx
 -- A shared primary key enforces at most one factor record per assessment.
 CREATE TABLE evaluated_risk_factors (
     risk_assessment_id INTEGER PRIMARY KEY REFERENCES risk_assessments(id),
-    country_of_residence_risk NUMERIC(5, 2) NOT NULL
-        CHECK (country_of_residence_risk BETWEEN 0 AND 100),
-    nationality_risk NUMERIC(5, 2) NOT NULL CHECK (nationality_risk BETWEEN 0 AND 100),
-    tax_domicile_risk NUMERIC(5, 2) NOT NULL CHECK (tax_domicile_risk BETWEEN 0 AND 100),
+    country_of_residence_risk NUMERIC(5, 2)
+        CHECK (country_of_residence_risk BETWEEN 0 AND 5),
+    nationality_risk NUMERIC(5, 2) CHECK (nationality_risk BETWEEN 0 AND 5),
+    tax_domicile_risk NUMERIC(5, 2) CHECK (tax_domicile_risk BETWEEN 0 AND 5),
     professional_activity_risk NUMERIC(5, 2) NOT NULL
-        CHECK (professional_activity_risk BETWEEN 0 AND 100),
-    income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 100)
+        CHECK (professional_activity_risk BETWEEN 0 AND 5),
+    income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 5)
 );
 
 COMMIT;

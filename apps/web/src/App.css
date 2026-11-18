@@ -552,7 +552,8 @@
   font-size: 10px;
 }
 
-.risk-value-row select {
+.risk-value-row select,
+.risk-value-row input {
   width: 92px;
   height: 32px;
   padding: 0 7px;
@@ -584,7 +585,8 @@
   font-size: 10px;
 }
 
-.country-risk-row select {
+.country-risk-row select,
+.country-risk-row input {
   width: 100%;
   min-width: 0;
   height: 35px;
@@ -622,7 +624,8 @@
   font-weight: 560;
 }
 
-.weight-editor-row select {
+.weight-editor-row select,
+.weight-editor-row input {
   width: 100%;
   height: 35px;
   padding: 0 9px;
@@ -634,7 +637,8 @@
   font-size: 11px;
 }
 
-.weight-editor-row select:focus {
+.weight-editor-row select:focus,
+.weight-editor-row input:focus {
   border-color: #259ba9;
   box-shadow: 0 0 0 3px rgb(37 155 169 / 14%);
 }

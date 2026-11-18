@@ -33,8 +33,8 @@ def get_configuration(version: int | None = None):
         if row is None:
             return None
 
-        if any(not 1 <= value <= 5 for value in row[1:]):
-            raise ConfigurationConflict('Stored weights must be between 1 and 5 for the frontend')
+        if any(not 0 <= value <= 5 for value in row[1:]) or sum(row[1:]) <= 0:
+            raise ConfigurationConflict('Stored weights must be between 0 and 5 with a positive total')
         risk_values = {}
         for key, (table, fk, lookup, pk, label) in RULES.items():
             rows = conn.execute(f'''
@@ -44,12 +44,12 @@ def get_configuration(version: int | None = None):
             ''', (row[0],)).fetchall()
             values = {}
             for choice, score in rows:
-                if score != int(score) or not 1 <= score <= 5:
-                    raise ConfigurationConflict(f'Stored risk for {key}/{choice} must be an integer from 1 to 5')
-                values[choice] = int(score)
+                if not score.is_finite() or not 0 <= score <= 5:
+                    raise ConfigurationConflict(f'Stored risk for {key}/{choice} must be a number from 0 to 5')
+                values[choice] = float(score)
             risk_values[key] = values
         return ScoringConfiguration(version=str(row[0]),
-                                    weights=FactorWeights(**dict(zip(RULES, row[1:]))),
+                                    weights=FactorWeights(**dict(zip(RULES, map(float, row[1:])))),
                                     risk_values=risk_values)
 
 

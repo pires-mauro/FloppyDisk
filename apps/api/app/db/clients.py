@@ -3,7 +3,8 @@ from psycopg.types.json import Jsonb
 
 from app.db.connection import get_connection
 from app.officer_auth import authenticate_officer
-from app.models.client_models import ClientSubmission
+from app.models.client_models import ClientSubmission, ManualReviewDecision
+from app.models.risk import RiskReviewResponse
 
 
 class DuplicateClient(Exception):
@@ -26,12 +27,13 @@ def list_clients():
                    initcap(a.assigned_tier::text) || ' Risk' AS risk_tier,
                    a.decision AS final_decision, o.internal_id AS officer_id,
                    o.name AS officer_name,
+                   a.preliminary,
                    a.evaluation_time AS submission_date
             FROM clients c
             JOIN countries country ON country.country_code = c.id_issuing_country_code
             JOIN LATERAL (
-                SELECT assigned_tier, decision, officer_id, evaluation_time
-                FROM risk_assessments WHERE client_id = c.id AND NOT preliminary
+                SELECT assigned_tier, decision, officer_id, evaluation_time, preliminary
+                FROM risk_assessments WHERE client_id = c.id
                 ORDER BY evaluation_time DESC, id DESC LIMIT 1
             ) a ON TRUE
             JOIN officers o ON o.id = a.officer_id
@@ -40,7 +42,7 @@ def list_clients():
         return cursor.fetchall()
 
 
-def save_client(form: ClientSubmission) -> int:
+def save_client(form: ClientSubmission, assessment: RiskReviewResponse) -> int:
     with get_connection() as conn:
         # The current form sends labels; also accept numeric lookup IDs.
         income = conn.execute('''
@@ -76,16 +78,69 @@ def save_client(form: ClientSubmission) -> int:
             raise DuplicateClient()
 
         snapshot = form.model_dump(mode='json', exclude={
-            'riskScore', 'riskTier', 'finalDecision', 'weightVersion',
+            'finalDecision',
             'officerPassword'})
         snapshot.update(income_range_id=income[0], income_range_label=income[1],
                         professional_category_id=profession[0], professional_category=profession[1])
+        snapshot['assessment'] = assessment.model_dump(mode='json')
         decision = {'approve': 'approved', 'manual_review': 'manual_review', 'decline': 'rejected'}
-        conn.execute('''
+        assessment_id = conn.execute('''
             INSERT INTO risk_assessments (client_id, officer_id, final_score, assigned_tier,
                 officer_comment, decision, preliminary, weights_version, input_snapshot)
-            VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s)
-        ''', (client[0], officer_id, form.riskScore, form.riskTier.split()[0].lower(),
-              form.officerComment or None, decision[form.finalDecision], form.weightVersion,
-              Jsonb(snapshot)))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        ''', (client[0], officer_id, assessment.score, assessment.tier.split()[0].lower(),
+              form.officerComment or None, decision[form.finalDecision], assessment.preliminary, int(assessment.weightVersion),
+              Jsonb(snapshot))).fetchone()[0]
+        # The server creates these five factors in this fixed order. The full
+        # weights, contributions and override reason are retained in the snapshot.
+        conn.execute('''
+            INSERT INTO evaluated_risk_factors (
+                risk_assessment_id, country_of_residence_risk, nationality_risk,
+                tax_domicile_risk, professional_activity_risk, income_risk)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (assessment_id, *(factor.score for factor in assessment.factors)))
         return client[0]
+
+
+def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> bool:
+    """Record the officer's outcome for a saved pending review without rescoring."""
+    with get_connection() as conn:
+        officer_id = authenticate_officer(
+            conn, decision.officerId, decision.officerPassword.get_secret_value(),
+        )
+        # Serialize decisions for this client so a review can only be completed once.
+        client = conn.execute('SELECT id FROM clients WHERE id = %s FOR UPDATE', (client_id,)).fetchone()
+        if client is None:
+            raise ValueError('Client does not exist')
+        previous = conn.execute('''
+            SELECT id, decision, input_snapshot, preliminary FROM risk_assessments
+            WHERE client_id = %s
+            ORDER BY evaluation_time DESC, id DESC LIMIT 1 FOR UPDATE
+        ''', (client_id,)).fetchone()
+        if previous is None or previous[1] != 'manual_review':
+            raise ValueError('This client is not awaiting manual review')
+        snapshot = dict(previous[2])
+        snapshot['manualReview'] = {
+            'previousAssessmentId': previous[0],
+            'officerId': decision.officerId,
+            'officerComment': decision.officerComment,
+            'finalDecision': decision.finalDecision,
+        }
+        saved_id = conn.execute('''
+            INSERT INTO risk_assessments (client_id, officer_id, final_score, assigned_tier,
+                officer_comment, decision, preliminary, weights_version, input_snapshot)
+            SELECT client_id, %s, final_score, assigned_tier, %s, %s, preliminary,
+                   weights_version, %s FROM risk_assessments WHERE id = %s
+            RETURNING id
+        ''', (officer_id, decision.officerComment or None,
+              'approved' if decision.finalDecision == 'approve' else 'rejected',
+              Jsonb(snapshot), previous[0])).fetchone()[0]
+        conn.execute('''
+            INSERT INTO evaluated_risk_factors (
+                risk_assessment_id, country_of_residence_risk, nationality_risk,
+                tax_domicile_risk, professional_activity_risk, income_risk)
+            SELECT %s, country_of_residence_risk, nationality_risk,
+                   tax_domicile_risk, professional_activity_risk, income_risk
+            FROM evaluated_risk_factors WHERE risk_assessment_id = %s
+        ''', (saved_id, previous[0]))
+        return previous[3]

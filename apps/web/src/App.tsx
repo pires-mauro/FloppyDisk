@@ -26,6 +26,7 @@ function App() {
   const [duplicateError, setDuplicateError] = useState('')
   const [duplicateChecking, setDuplicateChecking] = useState(false)
   const [decisionSaved, setDecisionSaved] = useState(false)
+  const [savedPreliminary, setSavedPreliminary] = useState(false)
   const validationErrors = validateForm(form)
   const errors = validationErrors
   const errorCount = Object.keys(errors).length
@@ -189,7 +190,8 @@ function App() {
     setDecisionSaved(false)
   }
 
-  function handleDecisionSaved() {
+  function handleDecisionSaved(preliminary: boolean) {
+    setSavedPreliminary(preliminary)
     setForm(initialForm)
     setSubmitted(false)
     setStep('details')
@@ -270,7 +272,9 @@ function App() {
       {!isRiskStep && <form className="onboarding-form" noValidate onSubmit={handleSubmit}>
         {decisionSaved && (
           <div className="decision-success" role="status">
-            Decision saved and client record created. The form is ready for the next client.
+            {savedPreliminary
+              ? 'Client record saved with a preliminary assessment calculated using cached scoring rules.'
+              : 'Decision saved and client record created.'} The form is ready for the next client.
           </div>
         )}
         {countriesError && (

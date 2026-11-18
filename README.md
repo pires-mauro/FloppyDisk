@@ -379,6 +379,125 @@ def get_connection():
 
 ## Project Status
 
+### Assessment review and final submission
+
+Risk values and calculated scores use a 0-5 scale. Risk values accept up to two
+decimal places. Tier thresholds remain unchanged pending BA confirmation:
+Low Risk is 0 <= score < 2.50, Medium Risk is 2.50 <= score < 3.75, and High
+Risk is 3.75 <= score <= 5. Category weights use 0-5 with up to two decimal
+places and a positive total. The analyst's percentages are multiplied by 5:
+residence 1.50 (30%), nationality 0.50 (10%), tax domicile 1.00 (20%),
+profession 1.25 (25%), and income 0.75 (15%). The calculator normalizes these
+relative weights, preserving the percentages exactly.
+The initial schema migration defines the 0-5 database constraints. Editing an
+already-applied migration does not update an existing database: its constraints
+must be updated separately, or the schema recreated on an empty development
+database. Existing configuration values and historical decisions are unchanged.
+
+The default configuration in migration 006 now uses `Scoring_Values.xlsx`:
+CPI2025 country risk is `5 * (1 - CPI / 100)` for residence, nationality and tax
+domicile. 179 of the application's 193 UN countries have CPI values; the other
+14 trigger manual review with an unavailable score, not a zero/default risk.
+The source's Hong Kong, Taiwan and Kosovo rows are retained in the import but
+excluded from the application's UN-country selections. Income risks are
+2, 1, 1.5, 3 for the four ascending brackets (the BA confirmed the last is
+100k+). Profession risks are Standard 1, Cash-intensive 3.5, High-risk 5.
+Missing CPI does not bypass a PEP/sanctions rejection. Manual review preserves
+the unavailable score and original configuration version when completed.
+As requested, these changes edit migrations 001 and 006 instead of adding a
+new migration. Already-applied migrations are skipped by the migration runner.
+For an existing development database, explicitly reapply 006 to update the
+required column types/constraints and create a new analyst configuration version
+while keeping prior versions and decisions. In PowerShell from the repo root:
+
+```powershell
+Get-Content -Raw apps/api/migrations/006_default_scoring_configuration.sql | docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1
+```
+
+Rebuild the API and critical containers for the corresponding code changes.
+No existing database is reset automatically.
+
+The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
+loads the current configuration, calls `critical`, and returns the score, tier,
+factor breakdown, and configuration version. This
+step writes no client or assessment records to SQL.
+
+When the officer submits the final decision, the frontend sends the same client
+details, officer credentials, and decision to `POST /api/v1/clients`.
+The API calls `critical` again with the latest saved configuration and checks
+that the decision matches the recalculated tier. If the tier now requires a
+different decision, submission returns HTTP 409 and the officer must refresh
+the risk review. The API authenticates the officer and saves the address, client,
+assessment and evaluated factors in one transaction. The response confirms the
+client ID and saved assessment. Browser-supplied scores, tiers and configuration
+versions are not used. The saved record uses the version actually used for the
+final calculation, including any weights or risk values saved since preview.
+
+For a medium-risk client, submitting "Submit for Manual Review" saves the client
+with a pending manual-review decision. In Client viewing, "Complete review"
+allows an officer to approve or decline it. This calls
+`POST /api/v1/clients/{client_id}/decision`, which checks the saved pending state
+and officer credentials, then accepts the reviewer's outcome without calling
+`critical` or enforcing an automatic tier decision. It appends a decision record,
+preserving the original scoring version, score, breakdown and initial submission.
+Concurrent or repeated completion is blocked once the pending review is resolved.
+
+No assessment tokens or signing keys are used. No database migration is needed
+for this flow: the existing factor table
+stores the evaluated scores and `input_snapshot.assessment` retains the full
+breakdown and override reason.
+
+The temporary PEP/sanctions controls are passed to `critical`, which applies
+their test override and returns its reason. They are placeholders for future
+OpenSanctions screening.
+
+### Scoring-service downtime
+
+Both services install the local `apps/shared` package. Its `onboarding_shared`
+module contains the versioned scoring rules, scoring request/result models,
+and common health-response model. `critical` and the backend fallback use the
+same implementation; onboarding-specific models remain in the API.
+The API calls `critical` first (five-second timeout). Connection failures,
+timeouts, and HTTP 5xx responses use the bundled rules with the latest saved
+database configuration. HTTP 4xx responses and malformed scoring results remain
+errors rather than being hidden by the fallback. No executable formula is
+downloaded; `/v1/formula/` only returns informational metadata.
+
+Fallback responses include `preliminary: true`, `scoringSource: cached`, and
+`scoringRuleVersion`. On submission, the API calculates again and saves the
+result and preliminary flag together. This final calculation determines the
+saved status, even if service availability changed since the review screen.
+The assessment snapshot retains the rule version and source. Client viewing
+shows both preliminary and confirmed records, labelled with their scoring
+status. Completing a manual review accepts the officer's outcome and preserves
+the original preliminary flag without calling `critical` again.
+
+Each request tries `critical` again, so new submissions use confirmed results
+once it recovers. Previously saved preliminary records are not automatically
+recalculated or promoted to confirmed; that follow-up workflow is separate.
+When live OpenSanctions screening is added, fallback results must continue to
+indicate that live screening could not be completed.
+
+Rebuild both services with `docker compose build api critical`. The Python
+services build from `apps/` using `api/Dockerfile` and `critical/Dockerfile` so
+each image can install `shared`. For direct local development, rerun
+`python -m pip install -r requirements.txt` from each service directory. This
+installs the shared package without changing the services' startup commands.
+
+As with the earlier changes, existing applied migrations are not rerun. An
+existing database needs the old constraint prohibiting preliminary decisions
+removed before using this feature (no data is deleted):
+
+```sql
+ALTER TABLE risk_assessments
+    DROP CONSTRAINT IF EXISTS risk_assessments_check,
+    DROP CONSTRAINT IF EXISTS risk_assessments_check1,
+    DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check;
+```
+
+The updated migrations 001 and 006 already handle this for a new database or
+when configuration migration 006 is explicitly reapplied.
+
 This project is under active development as part of a university assignment.
 
 **Current Setup:**
