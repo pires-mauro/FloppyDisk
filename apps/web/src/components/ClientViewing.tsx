@@ -16,6 +16,12 @@ const clientColumns = [
 
 type ClientRecord = Partial<Record<(typeof clientColumns)[number][0], string>>
 
+const riskTierOrder = new Map([
+  ['Low Risk', 0],
+  ['Medium Risk', 1],
+  ['High Risk', 2],
+])
+
 function getApiUrl() {
   return (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
 }
@@ -128,6 +134,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
 
   const visibleClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
+    const direction = sortOrder === 'ascending' ? 1 : -1
     return clients
       .filter((client) =>
         !query ||
@@ -137,12 +144,18 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
       )
       .filter((client) => !tierFilter || client.risk_tier === tierFilter)
       .sort((left, right) => {
-        const comparison = (left[sortField] || '').localeCompare(
-          right[sortField] || '',
+        if (sortField === 'risk_tier') {
+          const leftRank = riskTierOrder.get(left.risk_tier ?? '')
+          const rightRank = riskTierOrder.get(right.risk_tier ?? '')
+          if (leftRank === undefined) return rightRank === undefined ? 0 : 1
+          if (rightRank === undefined) return -1
+          return direction * (leftRank - rightRank)
+        }
+        return direction * (left.internal_client_id ?? '').localeCompare(
+          right.internal_client_id ?? '',
           undefined,
           { numeric: true, sensitivity: 'base' },
         )
-        return sortOrder === 'ascending' ? comparison : -comparison
       })
   }, [clients, search, tierFilter, sortField, sortOrder])
 
