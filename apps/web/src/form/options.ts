@@ -72,6 +72,4 @@ export const requiredFields: Exclude<
   'email',
   'dialPrefix',
   'phoneNumber',
-  'officerId',
-  'officerPassword',
 ]

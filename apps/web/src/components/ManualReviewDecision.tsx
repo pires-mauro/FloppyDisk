@@ -1,14 +1,14 @@
 import { useState, type FormEvent } from 'react'
+import type { OfficerSession } from './OfficerLogin'
 
-export function ManualReviewDecision({ clientId, clientName, preliminary, onSaved, onCancel }: {
+export function ManualReviewDecision({ clientId, clientName, preliminary, session, onSaved, onCancel }: {
   clientId: string
   clientName: string
   preliminary: boolean
+  session: OfficerSession
   onSaved: () => void
   onCancel: () => void
 }) {
-  const [officerId, setOfficerId] = useState('')
-  const [officerPassword, setOfficerPassword] = useState('')
   const [officerComment, setOfficerComment] = useState('')
   const [decision, setDecision] = useState<'approve' | 'decline'>('approve')
   const [saving, setSaving] = useState(false)
@@ -23,7 +23,12 @@ export function ManualReviewDecision({ clientId, clientName, preliminary, onSave
       const response = await fetch(`${apiUrl}/v1/clients/${encodeURIComponent(clientId)}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ officerId, officerPassword, officerComment, finalDecision: decision }),
+        body: JSON.stringify({
+          officerId: session.officerId,
+          officerPassword: session.password,
+          officerComment,
+          finalDecision: decision,
+        }),
       })
       const payload: unknown = await response.json()
       if (!response.ok) {
@@ -48,17 +53,6 @@ export function ManualReviewDecision({ clientId, clientName, preliminary, onSave
       <p>Record the review outcome. The original risk score and configuration version are retained.</p>
       {preliminary && <p role="status">This assessment used cached scoring rules. Recording the manual decision keeps its preliminary status.</p>}
       <fieldset disabled={saving}>
-        <div className="field">
-          <label className="field-label" htmlFor="manual-review-officer">Officer internal ID</label>
-          <input id="manual-review-officer" required pattern="[0-9]{10}" maxLength={10}
-            inputMode="numeric" value={officerId} onChange={(event) => setOfficerId(event.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="manual-review-password">Officer password</label>
-          <input id="manual-review-password" type="password" autoComplete="current-password"
-            required maxLength={1024} value={officerPassword}
-            onChange={(event) => setOfficerPassword(event.target.value)} />
-        </div>
         <div className="field">
           <label className="field-label" htmlFor="manual-review-comment">Review comment</label>
           <textarea id="manual-review-comment" maxLength={500} value={officerComment}

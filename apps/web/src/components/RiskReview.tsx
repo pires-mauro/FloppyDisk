@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ClientForm, Country } from '../form/types'
+import type { OfficerSession } from './OfficerLogin'
 
 type RiskReviewProps = {
   client: ClientForm
   countries: Country[]
+  session: OfficerSession
   onBack: () => void
   onDecisionSaved: (preliminary: boolean) => void
 }
@@ -62,6 +64,7 @@ async function getErrorMessage(response: Response) {
 export function RiskReview({
   client,
   countries,
+  session,
   onBack,
   onDecisionSaved,
 }: RiskReviewProps) {
@@ -82,13 +85,11 @@ export function RiskReview({
 
       try {
         const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
-        const riskClient: Partial<ClientForm> = { ...client }
-        delete riskClient.officerPassword
         const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...riskClient,
+            ...client,
             address: {
               street: client.addressStreet,
               city: client.addressCity,
@@ -178,6 +179,8 @@ export function RiskReview({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...client,
+          officerId: session.officerId,
+          officerPassword: session.password,
           address: {
             street: client.addressStreet,
             city: client.addressCity,
@@ -250,9 +253,9 @@ export function RiskReview({
       ],
     },
     {
-      title: 'Officer details',
+      title: 'Review details',
       fields: [
-        ['Officer internal ID', client.officerId],
+        ['Officer internal ID', session.officerId],
         ['Officer comment', client.officerComment || 'No comment'],
       ],
     },

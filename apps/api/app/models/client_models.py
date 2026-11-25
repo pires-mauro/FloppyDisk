@@ -36,7 +36,6 @@ class ClientDetails(BaseModel):
                 "email": "example@email.com",
                 "dialPrefix": "+352",
                 "phoneNumber": "012345678",
-                "officerId": "1234567890",
                 "pepConfirmed": False,
                 "sanctionsMatch": False,
             }
@@ -57,7 +56,6 @@ class ClientDetails(BaseModel):
     email: Annotated[str, Field(pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')]
     dialPrefix: Annotated[str, Field(pattern=r'^\+[1-9][0-9]{0,2}$')]
     phoneNumber: Annotated[str, Field(min_length=9, max_length=9, pattern=r'^[0-9]{9}$')]
-    officerId: Annotated[str, Field(min_length=10, max_length=10, pattern=r'^[0-9]{10}$')]
     officerComment: Annotated[str, Field(max_length=500)] = ''
     pepConfirmed: bool = False
     sanctionsMatch: bool = False
@@ -80,6 +78,7 @@ class ClientDetails(BaseModel):
 
 
 class ClientSubmission(ClientDetails):
+    officerId: Annotated[str, Field(pattern=r'^[0-9]{10}$')]
     officerPassword: SecretStr = Field(min_length=1, max_length=1024)
     finalDecision: Literal['approve', 'manual_review', 'decline']
 

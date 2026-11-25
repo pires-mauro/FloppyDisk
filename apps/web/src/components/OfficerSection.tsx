@@ -21,8 +21,8 @@ export function OfficerSection({
   return (
     <FormSection
       number="04"
-      title="Officer details"
-      description="Internal reference and review notes"
+      title="Review details"
+      description="Screening flags and review notes"
       iconClassName="officer-icon"
       icon={
         <svg viewBox="0 0 24 24">
@@ -31,57 +31,6 @@ export function OfficerSection({
         </svg>
       }
     >
-      <FormField
-        id="officerId"
-        label="Officer internal ID"
-        required
-        error={errors.officerId}
-        hint="Exactly 10 digits"
-      >
-        <input
-          id="officerId"
-          name="officerId"
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]{10}"
-          maxLength={10}
-          value={form.officerId}
-          onChange={(event) =>
-            onChange(
-              'officerId',
-              event.target.value.replace(/\D/g, '').slice(0, 10),
-            )
-          }
-          placeholder="e.g. 0123456789"
-          aria-invalid={Boolean(errors.officerId)}
-          aria-describedby={
-            errors.officerId ? 'officerId-error' : 'officerId-hint'
-          }
-        />
-      </FormField>
-      <FormField
-        id="officerPassword"
-        label="Officer password"
-        required
-        error={errors.officerPassword}
-        hint="Used to verify your officer account when saving the client"
-      >
-        <input
-          id="officerPassword"
-          name="officerPassword"
-          type="password"
-          autoComplete="current-password"
-          maxLength={1024}
-          value={form.officerPassword}
-          onChange={(event) => onChange('officerPassword', event.target.value)}
-          aria-invalid={Boolean(errors.officerPassword)}
-          aria-describedby={
-            errors.officerPassword
-              ? 'officerPassword-error'
-              : 'officerPassword-hint'
-          }
-        />
-      </FormField>
       <FormField
         id="officerComment"
         label="Officer comment"

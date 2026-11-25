@@ -43,9 +43,14 @@ export function toISODate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-export function dateOfBirthPickerValue(value: string) {
-  const date = parseDateOfBirth(value)
-  return date ? toISODate(date) : ''
+export function getLatestAdultBirthDate() {
+  const today = new Date()
+  const year = today.getFullYear() - 18
+  const day = Math.min(
+    today.getDate(),
+    new Date(year, today.getMonth() + 1, 0).getDate(),
+  )
+  return toISODate(new Date(year, today.getMonth(), day))
 }
 
 function isAtLeastEighteen(dateOfBirth: Date) {
@@ -77,12 +82,6 @@ export function validateForm(form: ClientForm): FieldErrors {
   }
   if (form.clientId.length > 100) {
     errors.clientId = 'Enter no more than 100 characters.'
-  }
-  if (form.officerId && !/^\d{10}$/.test(form.officerId)) {
-    errors.officerId = 'Officer ID must be exactly 10 digits.'
-  }
-  if (form.officerPassword.length > 1024) {
-    errors.officerPassword = 'Password must be 1024 characters or fewer.'
   }
   if (form.email && !isValidEmail(form.email.trim())) {
     errors.email = 'Enter a valid email address.'

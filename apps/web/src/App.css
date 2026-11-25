@@ -304,6 +304,48 @@
   font-size: 11px;
 }
 
+.client-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.client-status-badge.low,
+.client-status-badge.confirmed,
+.client-status-badge.approved {
+  border-color: #cce5d5;
+  color: #286744;
+  background: #edf8f1;
+}
+
+.client-status-badge.medium,
+.client-status-badge.preliminary,
+.client-status-badge.pending {
+  border-color: #f0dfc0;
+  color: #805d22;
+  background: #fff8e9;
+}
+
+.client-status-badge.high,
+.client-status-badge.rejected {
+  border-color: #f0d4d1;
+  color: #913f3b;
+  background: #fff1ef;
+}
+
+.client-status-badge.neutral {
+  border-color: #dce8eb;
+  color: #617889;
+  background: #f4f8f9;
+}
+
 .data-table-empty {
   height: 250px;
   padding: 30px !important;
@@ -1309,55 +1351,214 @@
 .date-picker-control {
   position: relative;
   min-width: 0;
-  cursor: pointer;
-}
-
-.date-picker-control .native-date-picker {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .date-picker-control .date-picker-input {
-  padding-right: 46px;
+  padding-right: 52px;
   min-height: 48px;
   border-color: #cfe4e8;
   border-radius: 8px;
   background: linear-gradient(110deg, #f1fbfa 0%, #f5f9fc 100%);
   color-scheme: light;
-  cursor: pointer;
-}
-
-.date-picker-control .date-picker-input:hover {
-  border-color: #80c4cb;
-  background: #edf9f8;
-}
-
-.date-picker-control .date-picker-input:focus {
-  border-color: #259ba9;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgb(37 155 169 / 14%);
+  cursor: text;
+  font-variant-numeric: tabular-nums;
 }
 
 .date-picker-icon {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  width: 29px;
-  height: 29px;
-  padding: 6px;
-  transform: translateY(-50%);
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: #158b99;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.6;
+}
+
+.date-picker-toggle {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
   background: #dff3f2;
-  pointer-events: none;
+  cursor: pointer;
+}
+
+.date-picker-toggle:hover {
+  background: #cbecea;
+}
+
+.date-picker-toggle:focus-visible,
+.calendar-nav:focus-visible,
+.calendar-day:focus-visible {
+  outline: 3px solid rgb(37 155 169 / 30%);
+  outline-offset: 2px;
+}
+
+.date-picker-calendar {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, calc(100vw - 48px));
+  padding: 15px;
+  border: 1px solid #dce8eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(25 58 76 / 18%);
+  cursor: default;
+}
+
+.calendar-heading {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  margin-bottom: 12px;
+  color: #173c58;
+  text-align: center;
+}
+
+.calendar-title-controls {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.calendar-title-controls strong,
+.calendar-title-button {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calendar-title-controls strong {
+  align-self: center;
+}
+
+.calendar-title-button {
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  color: #173c58;
+  background: transparent;
+  cursor: pointer;
+}
+
+.calendar-title-button:hover,
+.calendar-title-button[aria-pressed="true"] {
+  color: #146b82;
+  background: #eaf5f6;
+}
+
+.calendar-nav {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e1eaee;
+  border-radius: 7px;
+  color: #287c91;
+  background: #f7fbfc;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.calendar-nav:disabled {
+  color: #bdc8ce;
+  background: #f5f7f8;
+  cursor: not-allowed;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-weekday {
+  padding: 5px 0;
+  color: #81919b;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.calendar-blank {
+  min-height: 34px;
+}
+
+.calendar-day {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  color: #344b5e;
+  background: #f3f8fa;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.calendar-day:hover:not(:disabled) {
+  color: #146b82;
+  background: #dff3f2;
+}
+
+.calendar-day[aria-current="date"] {
+  color: #fff;
+  background: #168c9c;
+  font-weight: 700;
+}
+
+.calendar-day:disabled {
+  color: #c4cdd2;
+  background: #f7f8f9;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.calendar-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  min-height: 194px;
+}
+
+.calendar-choice {
+  min-height: 42px;
+  border: 1px solid #e1eaee;
+  border-radius: 7px;
+  color: #344b5e;
+  background: #f8fbfc;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.calendar-choice:hover:not(:disabled),
+.calendar-choice[aria-pressed="true"] {
+  border-color: #9bd1d4;
+  color: #146b82;
+  background: #eaf5f6;
+  font-weight: 700;
+}
+
+.calendar-choice:disabled {
+  color: #c4cdd2;
+  background: #f7f8f9;
+  cursor: not-allowed;
+}
+
+.calendar-year-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.calendar-cutoff {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #edf1f3;
+  color: #718392;
+  font-size: 9px;
+  text-align: center;
 }
 
 .field input::placeholder,
@@ -1765,5 +1966,107 @@
   .button-primary {
     flex: 1;
     justify-content: center;
+  }
+}
+
+.login-shell {
+  width: min(100% - 40px, 430px);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.login-brand {
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.login-card {
+  padding: 36px;
+  border: 1px solid #e1eaee;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(32 76 101 / 7%);
+}
+
+.login-card h1 {
+  margin: 9px 0 7px;
+  color: #173c58;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 32px;
+  font-weight: 400;
+}
+
+.login-card > p {
+  margin: 0 0 25px;
+  color: #718392;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.login-card form {
+  display: grid;
+  gap: 17px;
+}
+
+.login-card .field {
+  display: grid;
+  gap: 7px;
+}
+
+.login-card .field input {
+  width: 100%;
+  min-height: 43px;
+  padding: 10px 12px;
+  border: 1px solid #d5e1e6;
+  border-radius: 6px;
+  color: #344b5e;
+  background: #fff;
+}
+
+.login-card .field input:focus {
+  border-color: #168c9c;
+  outline: 3px solid rgb(37 155 169 / 16%);
+}
+
+.login-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 3px;
+}
+
+.login-card .login-error {
+  margin: 0;
+  color: #a63d3d;
+  font-size: 12px;
+}
+
+.login-card .login-note {
+  margin: 19px 0 0;
+  color: #81919b;
+  font-size: 10px;
+}
+
+.officer-session {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #718392;
+  font-size: 11px;
+}
+
+@media (max-width: 680px) {
+  .login-card {
+    padding: 28px 22px;
+  }
+
+  .officer-session {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 9px;
   }
 }

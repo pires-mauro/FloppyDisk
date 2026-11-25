@@ -28,7 +28,7 @@ from app.db.weights import (
     get_configuration,
     save_configuration,
 )
-from app.officer_auth import OfficerAuthenticationError, OfficerNotAdmin
+from app.db.connection import get_connection
 from app.models.client_models import (
     ClientOverview,
     ClientSubmission,
@@ -37,6 +37,7 @@ from app.models.client_models import (
     ClientDecisionSaved,
 )
 from app.models.health_models import HealthCheckResponse
+from app.models.officer_models import OfficerLoginRequest, OfficerLoginResponse
 from app.models.reference_data_models import (
     CountryResponse,
     IncomeRangeResponse,
@@ -50,9 +51,18 @@ from app.models.risk import (
     FinalizedClient,
 )
 from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
+from app.officer_auth import (
+    OfficerAuthenticationError,
+    OfficerNotAdmin,
+    authenticate_officer,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class RiskServiceUnavailable(Exception):
+    pass
 
 
 @router.get(
@@ -65,6 +75,29 @@ def health_check() -> HealthCheckResponse:
         status="ok",
         service="bank-onboarding-api",
     )
+
+
+@router.post(
+    "/v1/officers/login",
+    response_model=OfficerLoginResponse,
+    tags=["Officers"],
+)
+def login_officer(request: OfficerLoginRequest) -> OfficerLoginResponse:
+    try:
+        with get_connection() as conn:
+            officer_id = authenticate_officer(
+                conn,
+                request.officerId,
+                request.officerPassword.get_secret_value(),
+            )
+            officer = conn.execute(
+                "SELECT internal_id, is_admin FROM officers WHERE id = %s",
+                (officer_id,),
+            ).fetchone()
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    return OfficerLoginResponse(officerId=officer[0], isAdmin=officer[1])
 
 
 RISK_FACTORS = (
@@ -82,6 +115,7 @@ def _call_risk_service(
     *,
     pep_confirmed: bool,
     sanctions_match: bool,
+    allow_cached_fallback: bool = True,
 ) -> tuple[RiskCalculationResult, bool]:
     base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
     request = Request(
@@ -99,10 +133,14 @@ def _call_risk_service(
     except URLHTTPError as exc:
         logger.warning("Risk service returned HTTP %s", exc.code)
         if 500 <= exc.code < 600:
+            if not allow_cached_fallback:
+                raise RiskServiceUnavailable("Risk calculation service returned a server error") from exc
             return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
         raise HTTPException(status_code=502, detail="Risk calculation service returned an error") from exc
     except (URLError, TimeoutError, OSError) as exc:
         logger.warning("Risk service is unavailable: %s", exc)
+        if not allow_cached_fallback:
+            raise RiskServiceUnavailable("Risk calculation service is unavailable") from exc
         return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("Risk service returned an invalid response")

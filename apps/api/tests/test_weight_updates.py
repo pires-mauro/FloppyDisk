@@ -15,6 +15,25 @@ from app.models.weight_models import WeightUpdate, WeightUpdateRequest
 
 
 class WeightUpdateTests(unittest.TestCase):
+    def test_risk_values_allow_boundaries_and_two_decimal_places(self):
+        for value in (0, 5, 1.23):
+            with self.subTest(value=value):
+                WeightUpdate(
+                    employee_id="0000000001",
+                    password="valid-password",
+                    risk_values={"income_weight": {"choice": value}},
+                )
+
+    def test_risk_values_reject_out_of_range_and_more_than_two_decimal_places(self):
+        for value in (-0.01, 5.01, 1.234):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    WeightUpdate(
+                        employee_id="0000000001",
+                        password="valid-password",
+                        risk_values={"income_weight": {"choice": value}},
+                    )
+
     def test_partial_risk_value_update_preserves_other_saved_values(self):
         merged_weights, merged_risk_values = merge_weight_values(
             {"country_weight": 3},

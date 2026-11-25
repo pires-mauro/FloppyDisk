@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ManualReviewDecision } from './ManualReviewDecision'
+import type { OfficerSession } from './OfficerLogin'
 
 const clientColumns = [
   ['internal_client_id', 'Internal client ID'],
@@ -24,6 +25,33 @@ function getStringField(record: Record<string, unknown>, key: string) {
   return typeof value === 'string' || typeof value === 'number'
     ? String(value)
     : ''
+}
+
+function getStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    approved: 'Approved',
+    manual_review: 'Manual review',
+    pending: 'Pending',
+    rejected: 'Rejected',
+  }
+  return labels[value] ?? value.replaceAll('_', ' ')
+}
+
+function getStatusClass(key: string, value: string) {
+  if (key === 'assessment_status') {
+    return value === 'Confirmed' ? 'confirmed' : 'preliminary'
+  }
+  if (key === 'risk_tier') {
+    if (value === 'Low Risk') return 'low'
+    if (value === 'Medium Risk') return 'medium'
+    if (value === 'High Risk') return 'high'
+  }
+  if (key === 'final_decision') {
+    if (value === 'approved') return 'approved'
+    if (value === 'manual_review' || value === 'pending') return 'pending'
+    if (value === 'rejected') return 'rejected'
+  }
+  return 'neutral'
 }
 
 function parseClients(payload: unknown): ClientRecord[] {
@@ -51,7 +79,7 @@ function parseClients(payload: unknown): ClientRecord[] {
   })
 }
 
-export function ClientViewing() {
+export function ClientViewing({ session }: { session: OfficerSession }) {
   const [clients, setClients] = useState<ClientRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -139,6 +167,7 @@ export function ClientViewing() {
             clientId={reviewClient.internal_client_id}
             clientName={reviewClient.client_name || 'Client'}
             preliminary={reviewClient.assessment_status === 'Preliminary'}
+            session={session}
             onCancel={() => setReviewClient(null)}
             onSaved={() => {
               setReviewClient(null)
@@ -227,7 +256,17 @@ export function ClientViewing() {
                   <tr key={client.internal_client_id || index}>
                     {clientColumns.map(([key]) => (
                       <td key={key}>
-                        {client[key] || '—'}
+                        {key === 'risk_tier' ||
+                        key === 'final_decision' ||
+                        key === 'assessment_status' ? (
+                          <span
+                            className={`client-status-badge ${getStatusClass(key, client[key] || '')}`}
+                          >
+                            {client[key] ? getStatusLabel(client[key]) : '—'}
+                          </span>
+                        ) : (
+                          client[key] || '—'
+                        )}
                         {key === 'final_decision' && client.final_decision === 'manual_review' && (
                           <button type="button" className="retry-button" onClick={() => {
                             setReviewSaved(false)

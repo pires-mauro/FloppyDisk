@@ -7,6 +7,7 @@ import { OfficerSection } from './components/OfficerSection'
 import { RiskReview } from './components/RiskReview'
 import { RiskPreview } from './components/RiskPreview'
 import { WeightViewing } from './components/WeightViewing'
+import { OfficerLogin, type OfficerSession } from './components/OfficerLogin'
 import { unCountries } from './form/options'
 import { initialForm, type ClientForm, type Country } from './form/types'
 import { validateForm } from './form/validation'
@@ -14,6 +15,7 @@ import './App.css'
 
 function App() {
   const [form, setForm] = useState(initialForm)
+  const [officerSession, setOfficerSession] = useState<OfficerSession | null>(null)
   const [countries, setCountries] = useState<Country[]>([])
   const [countriesLoading, setCountriesLoading] = useState(true)
   const [countriesError, setCountriesError] = useState('')
@@ -203,6 +205,10 @@ function App() {
   const isRiskStep = step === 'risk'
   const isOnboarding = activeTab === 'onboarding'
 
+  if (!officerSession) {
+    return <OfficerLogin onLogin={setOfficerSession} />
+  }
+
   return (
     <main className="page-shell">
       <header className="topbar">
@@ -213,6 +219,23 @@ function App() {
             alt="FloppyDisk"
           />
         </a>
+        <div className="officer-session">
+          <span>
+            Signed in · {officerSession.officerId}
+            {officerSession.isAdmin ? ' · Admin' : ''}
+          </span>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              setOfficerSession(null)
+              handleReset()
+              setActiveTab('onboarding')
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </header>
 
       <nav className="primary-tabs" aria-label="Main navigation">
@@ -242,9 +265,11 @@ function App() {
         </button>
       </nav>
 
-      {!isOnboarding && activeTab === 'clients' && <ClientViewing />}
+      {!isOnboarding && activeTab === 'clients' && (
+        <ClientViewing session={officerSession} />
+      )}
       {!isOnboarding && activeTab === 'weights' && (
-        <WeightViewing countries={countries} />
+        <WeightViewing countries={countries} session={officerSession} />
       )}
 
       {isOnboarding && <>
@@ -357,6 +382,7 @@ function App() {
         <RiskReview
           client={form}
           countries={countries}
+          session={officerSession}
           onBack={() => setStep('details')}
           onDecisionSaved={handleDecisionSaved}
         />

@@ -335,7 +335,7 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 ## Database Access & Guidelines
 
-The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. Officer passwords are verified by the API using salted scrypt hashes stored in `officers.password_hash`. Client submissions require valid officer credentials; weight and risk-value changes additionally require an admin officer. Passwords are never stored in client snapshots.
+The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. Officer passwords are verified by the API using salted scrypt hashes stored in `officers.password_hash`. Officers sign in through the web app once; the browser keeps the credentials in memory for the current page session and supplies them automatically when an authenticated action is submitted. They are cleared on logout or page reload and are never stored in browser storage or client snapshots. Weight and risk-value changes additionally require an admin officer.
 
 The local demo officers created by the migrations are:
 
@@ -423,7 +423,8 @@ factor breakdown, and configuration version. This
 step writes no client or assessment records to SQL.
 
 When the officer submits the final decision, the frontend sends the same client
-details, officer credentials, and decision to `POST /api/v1/clients`.
+details, the signed-in officer credentials, and decision to
+`POST /api/v1/clients`.
 The API calls `critical` again with the latest saved configuration and checks
 that the decision matches the recalculated tier. If the tier now requires a
 different decision, submission returns HTTP 409 and the officer must refresh
@@ -437,7 +438,7 @@ For a medium-risk client, submitting "Submit for Manual Review" saves the client
 with a pending manual-review decision. In Client viewing, "Complete review"
 allows an officer to approve or decline it. This calls
 `POST /api/v1/clients/{client_id}/decision`, which checks the saved pending state
-and officer credentials, then accepts the reviewer's outcome without calling
+the signed-in officer credentials, then accepts the reviewer's outcome without calling
 `critical` or enforcing an automatic tier decision. It appends a decision record,
 preserving the original scoring version, score, breakdown and initial submission.
 Concurrent or repeated completion is blocked once the pending review is resolved.
@@ -473,10 +474,13 @@ status. Completing a manual review accepts the officer's outcome and preserves
 the original preliminary flag without calling `critical` again.
 
 Each request tries `critical` again, so new submissions use confirmed results
-once it recovers. Previously saved preliminary records are not automatically
-recalculated or promoted to confirmed; that follow-up workflow is separate.
-When live OpenSanctions screening is added, fallback results must continue to
-indicate that live screening could not be completed.
+once it recovers. The API also checks the latest preliminary assessment for each
+client once an hour. When `critical` is available, it appends a confirmed
+recalculation using the original weights version and evaluated factor scores;
+the original preliminary assessment remains in the audit history. If the
+service is unavailable, the preliminary record is left unchanged for the next
+hourly run. When live OpenSanctions screening is added, fallback results must
+continue to indicate that live screening could not be completed.
 
 Rebuild both services with `docker compose build api critical`. The Python
 services build from `apps/` using `api/Dockerfile` and `critical/Dockerfile` so

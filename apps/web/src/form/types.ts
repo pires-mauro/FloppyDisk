@@ -21,8 +21,6 @@ export type ClientForm = {
   email: string
   dialPrefix: string
   phoneNumber: string
-  officerId: string
-  officerPassword: string
   officerComment: string
   pepConfirmed: boolean
   sanctionsMatch: boolean
@@ -48,8 +46,6 @@ export const initialForm: ClientForm = {
   email: '',
   dialPrefix: '',
   phoneNumber: '',
-  officerId: '',
-  officerPassword: '',
   officerComment: '',
   pepConfirmed: false,
   sanctionsMatch: false,
