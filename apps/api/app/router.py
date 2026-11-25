@@ -35,6 +35,7 @@ from app.models.client_models import (
     DuplicateResponse,
     ManualReviewDecision,
     ClientDecisionSaved,
+    OfficerClientOverview,
 )
 from app.models.health_models import HealthCheckResponse
 from app.models.officer_models import OfficerLoginRequest, OfficerLoginResponse
@@ -244,6 +245,14 @@ def check_duplicate(
 @router.get("/v1/clients", response_model=list[ClientOverview], tags=["Clients"])
 def get_clients():
     return list_clients()
+
+
+@router.post("/v1/clients/overview", response_model=list[OfficerClientOverview], tags=["Clients"])
+def get_officer_client_overview(officer: OfficerLoginRequest):
+    try:
+        return list_clients(officer)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @router.post("/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"])

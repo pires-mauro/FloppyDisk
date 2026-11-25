@@ -5,6 +5,7 @@ import type { OfficerSession } from './OfficerLogin'
 const clientColumns = [
   ['internal_client_id', 'Internal client ID'],
   ['client_name', 'Client name'],
+  ['document_number', 'Identity document number'],
   ['issuing_country', 'Issuing country'],
   ['risk_tier', 'Risk tier'],
   ['final_decision', 'Final decision'],
@@ -15,6 +16,12 @@ const clientColumns = [
 ] as const
 
 type ClientRecord = Partial<Record<(typeof clientColumns)[number][0], string>>
+
+const riskTierOrder = new Map([
+  ['Low Risk', 0],
+  ['Medium Risk', 1],
+  ['High Risk', 2],
+])
 
 function getApiUrl() {
   return (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
@@ -84,6 +91,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [clientIdFilter, setClientIdFilter] = useState('')
   const [tierFilter, setTierFilter] = useState('')
   const [sortField, setSortField] = useState<'internal_client_id' | 'risk_tier'>(
     'internal_client_id',
@@ -101,14 +109,24 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
       setError('')
 
       try {
-        const response = await fetch(`${getApiUrl()}/v1/clients`, {
+        const response = await fetch(`${getApiUrl()}/v1/clients/overview`, {
           signal: controller.signal,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            officerId: session.officerId,
+            officerPassword: session.password,
+          }),
         })
+        if (response.status === 401) {
+          throw new Error('Sign in again to view client records.')
+        }
         if (!response.ok) {
           throw new Error(`Client list request failed (${response.status}).`)
         }
 
-        setClients(parseClients(await response.json()))
+        const records = parseClients(await response.json())
+        if (!controller.signal.aborted) setClients(records)
       } catch (requestError) {
         if (controller.signal.aborted) return
         setClients([])
@@ -124,11 +142,14 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
 
     void loadClients()
     return () => controller.abort()
-  }, [retry])
+  }, [retry, session.officerId, session.password])
 
   const visibleClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
+    const clientId = clientIdFilter.trim()
+    const direction = sortOrder === 'ascending' ? 1 : -1
     return clients
+      .filter((client) => !clientId || client.internal_client_id === clientId)
       .filter((client) =>
         !query ||
         Object.values(client).some((value) =>
@@ -137,14 +158,20 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
       )
       .filter((client) => !tierFilter || client.risk_tier === tierFilter)
       .sort((left, right) => {
-        const comparison = (left[sortField] || '').localeCompare(
-          right[sortField] || '',
+        if (sortField === 'risk_tier') {
+          const leftRank = riskTierOrder.get(left.risk_tier ?? '')
+          const rightRank = riskTierOrder.get(right.risk_tier ?? '')
+          if (leftRank === undefined) return rightRank === undefined ? 0 : 1
+          if (rightRank === undefined) return -1
+          return direction * (leftRank - rightRank)
+        }
+        return direction * (left.internal_client_id ?? '').localeCompare(
+          right.internal_client_id ?? '',
           undefined,
           { numeric: true, sensitivity: 'base' },
         )
-        return sortOrder === 'ascending' ? comparison : -comparison
       })
-  }, [clients, search, tierFilter, sortField, sortOrder])
+  }, [clients, search, clientIdFilter, tierFilter, sortField, sortOrder])
 
   return (
     <section className="data-view" aria-labelledby="client-view-title">
@@ -188,6 +215,16 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
               placeholder="Search client records"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <label className="client-filter">
+            Internal client ID
+            <input
+              type="search"
+              inputMode="numeric"
+              placeholder="Exact ID"
+              value={clientIdFilter}
+              onChange={(event) => setClientIdFilter(event.target.value)}
             />
           </label>
           <label className="client-filter">
@@ -238,7 +275,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
         {error && (
           <div className="data-view-alert" role="alert">
             <strong>Could not load client records</strong>
-            <span>{error} The client-list endpoint may not be implemented yet.</span>
+            <span>{error}</span>
           </div>
         )}
         <div className="data-table-scroll">
@@ -285,7 +322,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
                     </strong>
                     <span>
                       {clients.length
-                        ? 'Try another search.'
+                        ? 'Try another search or change the filters.'
                         : 'Submitted clients will appear here when records are available.'}
                     </span>
                   </td>

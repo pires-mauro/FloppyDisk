@@ -114,3 +114,7 @@ class ClientOverview(BaseModel):
     officer_id: str
     officer_name: str
     submission_date: datetime
+
+
+class OfficerClientOverview(ClientOverview):
+    document_number: DocumentNumber

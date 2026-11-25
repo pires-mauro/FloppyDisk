@@ -87,10 +87,11 @@ export function DateOfBirthField({
   }
 
   function toggleCalendar() {
-    if (!calendarOpen) {
+    if (calendarOpen) {
+      setCalendarOpen(false)
+    } else {
       openCalendar()
     }
-    setCalendarOpen((open) => !open)
   }
 
   function openCalendar() {
