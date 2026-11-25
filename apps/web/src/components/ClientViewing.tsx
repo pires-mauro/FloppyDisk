@@ -90,6 +90,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [clientIdFilter, setClientIdFilter] = useState('')
   const [tierFilter, setTierFilter] = useState('')
   const [sortField, setSortField] = useState<'internal_client_id' | 'risk_tier'>(
     'internal_client_id',
@@ -134,8 +135,10 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
 
   const visibleClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
+    const clientId = clientIdFilter.trim()
     const direction = sortOrder === 'ascending' ? 1 : -1
     return clients
+      .filter((client) => !clientId || client.internal_client_id === clientId)
       .filter((client) =>
         !query ||
         Object.values(client).some((value) =>
@@ -157,7 +160,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
           { numeric: true, sensitivity: 'base' },
         )
       })
-  }, [clients, search, tierFilter, sortField, sortOrder])
+  }, [clients, search, clientIdFilter, tierFilter, sortField, sortOrder])
 
   return (
     <section className="data-view" aria-labelledby="client-view-title">
@@ -201,6 +204,16 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
               placeholder="Search client records"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <label className="client-filter">
+            Internal client ID
+            <input
+              type="search"
+              inputMode="numeric"
+              placeholder="Exact ID"
+              value={clientIdFilter}
+              onChange={(event) => setClientIdFilter(event.target.value)}
             />
           </label>
           <label className="client-filter">
@@ -298,7 +311,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
                     </strong>
                     <span>
                       {clients.length
-                        ? 'Try another search.'
+                        ? 'Try another search or change the filters.'
                         : 'Submitted clients will appear here when records are available.'}
                     </span>
                   </td>
