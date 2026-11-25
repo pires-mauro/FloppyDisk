@@ -518,6 +518,16 @@
   border-bottom: 0;
 }
 
+.role-flags-table th strong,
+.role-flags-table th code {
+  display: block;
+}
+
+.role-flags-table th strong + code {
+  margin-top: 3px;
+  color: #617889;
+}
+
 .weight-editor-heading {
   padding-bottom: 17px;
   border-bottom: 1px solid #edf1f3;

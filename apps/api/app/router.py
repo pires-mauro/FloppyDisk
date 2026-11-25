@@ -23,6 +23,7 @@ from app.db.reference_data import (
     get_income_ranges,
     get_professional_categories,
 )
+from app.db.screening import list_screening_roles, update_screening_roles
 from app.db.weights import (
     ConfigurationConflict,
     get_configuration,
@@ -51,6 +52,7 @@ from app.models.risk import (
     RiskReviewResponse,
     FinalizedClient,
 )
+from app.models.screening_models import ScreeningRole, ScreeningRoleUpdate
 from app.models.weight_models import ScoringConfiguration, WeightUpdate, WeightVersion
 from app.officer_auth import (
     OfficerAuthenticationError,
@@ -338,6 +340,26 @@ def post_weights(update: WeightUpdate):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ConfigurationConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/v1/screening/roles/list", response_model=list[ScreeningRole], tags=["Screening"])
+def get_screening_roles(officer: OfficerLoginRequest):
+    try:
+        return list_screening_roles(officer)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.put("/v1/screening/roles", response_model=list[ScreeningRole], tags=["Screening"])
+def put_screening_roles(update: ScreeningRoleUpdate):
+    try:
+        return update_screening_roles(update)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except OfficerNotAdmin as exc:
+        raise HTTPException(status_code=403, detail="Only admin officers may update role flags") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
