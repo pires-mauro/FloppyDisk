@@ -5,6 +5,7 @@ import type { OfficerSession } from './OfficerLogin'
 const clientColumns = [
   ['internal_client_id', 'Internal client ID'],
   ['client_name', 'Client name'],
+  ['document_number', 'Identity document number'],
   ['issuing_country', 'Issuing country'],
   ['risk_tier', 'Risk tier'],
   ['final_decision', 'Final decision'],
@@ -108,14 +109,24 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
       setError('')
 
       try {
-        const response = await fetch(`${getApiUrl()}/v1/clients`, {
+        const response = await fetch(`${getApiUrl()}/v1/clients/overview`, {
           signal: controller.signal,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            officerId: session.officerId,
+            officerPassword: session.password,
+          }),
         })
+        if (response.status === 401) {
+          throw new Error('Sign in again to view client records.')
+        }
         if (!response.ok) {
           throw new Error(`Client list request failed (${response.status}).`)
         }
 
-        setClients(parseClients(await response.json()))
+        const records = parseClients(await response.json())
+        if (!controller.signal.aborted) setClients(records)
       } catch (requestError) {
         if (controller.signal.aborted) return
         setClients([])
@@ -131,7 +142,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
 
     void loadClients()
     return () => controller.abort()
-  }, [retry])
+  }, [retry, session.officerId, session.password])
 
   const visibleClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
@@ -264,7 +275,7 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
         {error && (
           <div className="data-view-alert" role="alert">
             <strong>Could not load client records</strong>
-            <span>{error} The client-list endpoint may not be implemented yet.</span>
+            <span>{error}</span>
           </div>
         )}
         <div className="data-table-scroll">
