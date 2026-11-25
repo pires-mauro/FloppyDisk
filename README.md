@@ -431,13 +431,13 @@ The source's Hong Kong, Taiwan and Kosovo rows are retained in the import but
 excluded from the application's UN-country selections. Income risks are
 2, 1, 1.5, 3 for the four ascending brackets (the BA confirmed the last is
 100k+). Profession risks are Standard 1, Cash-intensive 3.5, High-risk 5.
-Missing CPI does not bypass a PEP/sanctions rejection. Manual review preserves
+Missing CPI does not bypass a confirmed screening red flag. Manual review preserves
 the unavailable score and original configuration version when completed.
 
-The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
-loads the current configuration, calls `critical`, and returns the score, tier,
-factor breakdown, and configuration version. This
-step writes no client or assessment records to SQL.
+The frontend sends signed-in officer credentials and client details to
+`POST /api/v1/risk/evaluation`. The API loads the current configuration, calls
+`critical`, and returns the score, tier, factor breakdown, and screening candidates.
+This step writes no client or assessment records to SQL.
 
 When the officer submits the final decision, the frontend sends the same client
 details, the signed-in officer credentials, and decision to
@@ -460,14 +460,19 @@ the signed-in officer credentials, then accepts the reviewer's outcome without c
 preserving the original scoring version, score, breakdown and initial submission.
 Concurrent or repeated completion is blocked once the pending review is resolved.
 
-No assessment tokens or signing keys are used. No database migration is needed
-for this flow: the existing factor table
-stores the evaluated scores and `input_snapshot.assessment` retains the full
-breakdown and override reason.
+During Risk review, `critical` calls the backend's private screening route
+using a short-lived credential tied to the lookup. The backend searches the
+imported names and aliases in PostgreSQL. It shows dates of birth, nationalities,
+countries, and source datasets when available. A name match with missing
+identifying details remains a candidate for the officer to review.
 
-The temporary PEP/sanctions controls are passed to `critical`, which applies
-their test override and returns its reason. They are placeholders for future
-OpenSanctions screening.
+Officers confirm or dismiss specific candidates through
+`POST /api/v1/risk/screening/confirm`. A confirmed red-flag role requires a
+decline. A confirmed non-red or unclassified role requires manual review unless
+the score already requires a decline. Pending candidates and unavailable
+screening prevent approval or submission to the manual-review queue until
+screening is resolved. Final submission recalculates the result. The saved
+assessment includes the evidence, role flags, dispositions, and export checksum.
 
 ### Scoring-service downtime
 
@@ -496,14 +501,17 @@ client once an hour. When `critical` is available, it appends a confirmed
 recalculation using the original weights version and evaluated factor scores;
 the original preliminary assessment remains in the audit history. If the
 service is unavailable, the preliminary record is left unchanged for the next
-hourly run. When live OpenSanctions screening is added, fallback results must
-continue to indicate that live screening could not be completed.
+hourly run. During fallback the API queries the same screening data directly.
+Reassessment of a saved record uses its saved screening evidence and preserves
+the existing officer decision.
 
 Rebuild both services with `docker compose build api critical`. The Python
 services build from `apps/` using `api/Dockerfile` and `critical/Dockerfile` so
 each image can install `shared`. For direct local development, rerun
 `python -m pip install -r requirements.txt` from each service directory. This
 installs the shared package without changing the services' startup commands.
+For a scoring service run directly outside Docker, set
+`SCREENING_BACKEND_URL=http://localhost:8000` in that service's environment.
 
 The development baseline allows preliminary assessments to retain a final
 officer decision while awaiting confirmation from the scoring service.

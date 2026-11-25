@@ -116,14 +116,6 @@ function App() {
     setDecisionSaved(false)
   }
 
-  function updateRiskFlag(
-    field: 'pepConfirmed' | 'sanctionsMatch',
-    value: boolean,
-  ) {
-    setForm((current) => ({ ...current, [field]: value }))
-    setDecisionSaved(false)
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitted(true)
@@ -363,7 +355,6 @@ function App() {
           form={form}
           errors={errors}
           onChange={updateField}
-          onRiskFlagChange={updateRiskFlag}
         />
         <RiskPreview client={form} countries={countries} />
         {duplicateError && (

@@ -1,9 +1,54 @@
-from psycopg import Connection
+from psycopg import Connection, OperationalError
+from psycopg.errors import UndefinedTable
 
 from app.db.connection import get_connection
+from app.import_opensanctions import normalize_name
 from app.models.officer_models import OfficerLoginRequest
 from app.models.screening_models import ScreeningRole, ScreeningRoleUpdate
 from app.officer_auth import authenticate_officer
+from onboarding_shared.screening import ScreeningCandidate, ScreeningRequest, ScreeningResult, ScreeningRoleEvidence
+
+
+def screen_client(request: ScreeningRequest) -> ScreeningResult:
+    try:
+        with get_connection() as connection:
+            # Read a single committed export and policy snapshot for the whole lookup.
+            connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            snapshot = connection.execute('SELECT sha256 FROM screening_import_state').fetchone()
+            if snapshot is None:
+                return ScreeningResult(available=False)
+            name = normalize_name(request.name)
+            if not name:
+                return ScreeningResult(available=False, sourceSha256=snapshot[0])
+            rows = connection.execute('''
+                SELECT entity_id, caption, birth_dates, nationalities, countries, datasets, topics
+                FROM screening_people
+                WHERE normalized_names @> ARRAY[%s]::text[]
+                ORDER BY entity_id
+            ''', (name,)).fetchall()
+            flags = dict(connection.execute('SELECT role, red_flag FROM sanctions_roles').fetchall())
+    except (OperationalError, UndefinedTable):
+        return ScreeningResult(available=False)
+
+    candidates = []
+    for entity_id, caption, birth_dates, nationalities, countries, sources, topics in rows:
+        # The name generates candidates. Missing or conflicting metadata is shown
+        # to the officer as evidence and never silently decides identity.
+        candidates.append(ScreeningCandidate(
+            entityId=entity_id, name=caption, birthDates=birth_dates,
+            nationalities=nationalities, countries=countries, sources=sources,
+            roles=[ScreeningRoleEvidence(role=topic, redFlag=flags.get(topic)) for topic in sorted(set(topics))],
+            decision=request.decisions.get(entity_id),
+        ))
+
+    birth_date = request.birthDate.isoformat()
+    nationality = request.nationality.upper()
+    candidates.sort(key=lambda candidate: (
+        birth_date not in candidate.birthDates,
+        nationality not in {country.upper() for country in candidate.nationalities},
+        candidate.name.casefold(),
+    ))
+    return ScreeningResult(sourceSha256=snapshot[0], candidates=candidates)
 
 
 def _list_roles(connection: Connection) -> list[ScreeningRole]:

@@ -2,6 +2,7 @@ import math
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+from onboarding_shared.screening import ScreeningRequest, ScreeningResult
 
 
 class HealthCheckResponse(BaseModel):
@@ -12,9 +13,11 @@ class HealthCheckResponse(BaseModel):
 class RiskEvaluationRequest(BaseModel):
     weights: dict[str, float]
     scores: dict[str, float | None]
-    # Temporary screening inputs until the OpenSanctions integration is ready.
+    # Legacy flags are used when reprocessing assessments saved before screening.
     pepConfirmed: bool = False
     sanctionsMatch: bool = False
+    screeningRequest: ScreeningRequest | None = None
+    screeningToken: str | None = None
 
     @model_validator(mode="after")
     def validate_factors(self):
@@ -47,3 +50,4 @@ class RiskCalculationResult(BaseModel):
     tier: Literal['Low Risk', 'Medium Risk', 'High Risk']
     overrideReason: str | None = None
     contributions: dict[str, float | None]
+    screening: ScreeningResult | None = None

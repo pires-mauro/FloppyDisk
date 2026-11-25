@@ -157,7 +157,7 @@ function evaluateClient(
   return {
     manualReviewReason,
     score,
-    tier: client.pepConfirmed || client.sanctionsMatch ? 'High Risk' : manualReviewReason ? 'Medium Risk' : tier,
+    tier: manualReviewReason ? 'Medium Risk' : tier,
     weightVersion: configuration.version,
     factors,
   }
@@ -222,8 +222,6 @@ export function RiskPreview({
     }
   }, [client, configuration, countries])
 
-  const redFlag = client.pepConfirmed || client.sanctionsMatch
-
   return (
     <section className="risk-preview-card" aria-live="polite">
       <div className="risk-preview-heading">
@@ -235,14 +233,6 @@ export function RiskPreview({
           {loading ? 'Loading scoring rules…' : 'Updates as fields change'}
         </span>
       </div>
-      {redFlag && (
-        <div className="red-flag-banner" role="alert">
-          AUTOMATIC HIGH RISK OVERRIDE: {[
-            client.sanctionsMatch && 'Sanctions',
-            client.pepConfirmed && 'PEP',
-          ].filter(Boolean).join(' / ')} Hit Detected
-        </div>
-      )}
       {evaluation && (
         <>
           {evaluation.manualReviewReason && (

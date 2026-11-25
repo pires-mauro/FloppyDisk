@@ -5,11 +5,12 @@ from typing import Annotated
 from urllib.error import HTTPError as URLHTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
 from onboarding_shared.scoring import calculate_risk
 from onboarding_shared.models import RiskEvaluationRequest
+from onboarding_shared.screening import ScreeningRequest, ScreeningResult, screening_outcome
 
 from app.db.clients import (
     DuplicateClient,
@@ -23,7 +24,7 @@ from app.db.reference_data import (
     get_income_ranges,
     get_professional_categories,
 )
-from app.db.screening import list_screening_roles, update_screening_roles
+from app.db.screening import list_screening_roles, screen_client, update_screening_roles
 from app.db.weights import (
     ConfigurationConflict,
     get_configuration,
@@ -46,6 +47,7 @@ from app.models.reference_data_models import (
     ProfessionalCategoryResponse,
 )
 from app.models.risk import (
+    OfficerRiskReviewRequest,
     RiskCalculationResult,
     RiskFactorResult,
     RiskReviewRequest,
@@ -59,6 +61,7 @@ from app.officer_auth import (
     OfficerNotAdmin,
     authenticate_officer,
 )
+from app.screening_auth import issue_token, verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -116,9 +119,10 @@ def _call_risk_service(
     weights: dict[str, float],
     scores: dict[str, float | None],
     *,
-    pep_confirmed: bool,
-    sanctions_match: bool,
+    pep_confirmed: bool = False,
+    sanctions_match: bool = False,
     allow_cached_fallback: bool = True,
+    screening_request: ScreeningRequest | None = None,
 ) -> tuple[RiskCalculationResult, bool]:
     base_url = os.environ.get("RISK_SERVICE_URL", "http://critical:8000").rstrip("/")
     request = Request(
@@ -126,6 +130,8 @@ def _call_risk_service(
         data=RiskEvaluationRequest(
             weights=weights, scores=scores,
             pepConfirmed=pep_confirmed, sanctionsMatch=sanctions_match,
+            screeningRequest=screening_request,
+            screeningToken=issue_token(screening_request) if screening_request is not None else None,
         ).model_dump_json().encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -138,37 +144,63 @@ def _call_risk_service(
         if 500 <= exc.code < 600:
             if not allow_cached_fallback:
                 raise RiskServiceUnavailable("Risk calculation service returned a server error") from exc
-            return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
+            return _cached_risk(weights, scores, pep_confirmed, sanctions_match, screening_request)
         raise HTTPException(status_code=502, detail="Risk calculation service returned an error") from exc
     except (URLError, TimeoutError, OSError) as exc:
         logger.warning("Risk service is unavailable: %s", exc)
         if not allow_cached_fallback:
             raise RiskServiceUnavailable("Risk calculation service is unavailable") from exc
-        return _cached_risk(weights, scores, pep_confirmed, sanctions_match)
+        return _cached_risk(weights, scores, pep_confirmed, sanctions_match, screening_request)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("Risk service returned an invalid response")
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid response") from exc
 
     try:
-        logger.info("Risk service response: %s", payload)
         result = RiskCalculationResult.model_validate(payload)
     except ValidationError as exc:
         raise HTTPException(status_code=502, detail="Risk calculation service returned an invalid evaluation") from exc
     if result.contributions.keys() != weights.keys():
         raise HTTPException(status_code=502, detail="Risk calculation service returned an incomplete factor breakdown")
+    if screening_request is not None and result.screening is None:
+        if allow_cached_fallback:
+            return _cached_risk(weights, scores, pep_confirmed, sanctions_match, screening_request)
+        raise RiskServiceUnavailable("Risk calculation service did not return screening results")
     return result, False
 
 
-def _cached_risk(weights, scores, pep_confirmed, sanctions_match) -> tuple[RiskCalculationResult, bool]:
+def _cached_risk(
+    weights, scores, pep_confirmed, sanctions_match, screening_request: ScreeningRequest | None = None,
+) -> tuple[RiskCalculationResult, bool]:
     logger.warning('Using bundled scoring rules; assessment will be preliminary')
     result = RiskCalculationResult.model_validate(calculate_risk(
         weights, scores, pep_confirmed=pep_confirmed, sanctions_match=sanctions_match,
     ))
+    if screening_request is not None:
+        result.screening = screen_client(screening_request)
+        result.tier, result.overrideReason = screening_outcome(result.tier, result.overrideReason, result.screening)
     return result, True
 
 
+@router.post("/internal/screening", response_model=ScreeningResult, include_in_schema=False)
+def screening_callback(request: ScreeningRequest, authorization: Annotated[str, Header()] = ""):
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not verify_token(request, token):
+        raise HTTPException(status_code=401, detail="Invalid screening callback credential")
+    return screen_client(request)
+
+
 @router.post("/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"])
-def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
+@router.post("/v1/risk/screening/confirm", response_model=RiskReviewResponse, tags=["Risk"])
+def evaluate_risk(request: OfficerRiskReviewRequest) -> RiskReviewResponse:
+    try:
+        with get_connection() as connection:
+            authenticate_officer(connection, request.officerId, request.officerPassword.get_secret_value())
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return _evaluate_risk(request)
+
+
+def _evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
     try:
         configuration = get_configuration()
     except ConfigurationConflict as exc:
@@ -201,8 +233,10 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
     calculation, preliminary = _call_risk_service(
         service_weights,
         score_values,
-        pep_confirmed=request.pepConfirmed,
-        sanctions_match=request.sanctionsMatch,
+        screening_request=ScreeningRequest(
+            name=request.clientName, birthDate=request.dateOfBirth, nationality=request.nationality,
+            decisions=request.screeningDecisions,
+        ),
     )
     factors = [
         RiskFactorResult(
@@ -216,7 +250,7 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
     ]
     missing_cpi = [f'{label}: {value}' for _, label, value, _, score in factor_details if score is None]
     override_reason = calculation.overrideReason
-    if missing_cpi and calculation.tier == 'Medium Risk':
+    if missing_cpi and override_reason and override_reason.startswith('Missing CPI:'):
         override_reason = f'Missing CPI: {", ".join(missing_cpi)}; manual review required'
 
     assessment = RiskReviewResponse(
@@ -228,6 +262,7 @@ def evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
         weightVersion=configuration.version,
         overrideReason=override_reason,
         factors=factors,
+        screening=calculation.screening,
     )
     return assessment
 
@@ -260,7 +295,9 @@ def get_officer_client_overview(officer: OfficerLoginRequest):
 @router.post("/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"])
 def post_client(submission: ClientSubmission):
     try:
-        assessment = evaluate_risk(RiskReviewRequest.model_validate(submission.model_dump()))
+        with get_connection() as connection:
+            authenticate_officer(connection, submission.officerId, submission.officerPassword.get_secret_value())
+        assessment = _evaluate_risk(RiskReviewRequest.model_validate(submission.model_dump()))
         expected_decision = {
             'Low Risk': 'approve', 'Medium Risk': 'manual_review', 'High Risk': 'decline',
         }[assessment.tier]
@@ -269,6 +306,10 @@ def post_client(submission: ClientSubmission):
                 status_code=409,
                 detail='The recalculated risk tier requires a different decision. Refresh the risk assessment and review it again.',
             )
+        if submission.finalDecision != 'decline' and (
+            assessment.screening is None or assessment.screening.requires_confirmation()
+        ):
+            raise HTTPException(status_code=409, detail='Resolve the screening matches before recording a decision.')
         client_id = save_client(submission, assessment)
     except OfficerAuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc

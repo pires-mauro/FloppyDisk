@@ -53,10 +53,7 @@ export const dialPrefixes = [
   '+996', '+998',
 ].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
 
-export const requiredFields: Exclude<
-  keyof ClientForm,
-  'pepConfirmed' | 'sanctionsMatch'
->[] = [
+export const requiredFields: (keyof ClientForm)[] = [
   'clientName',
   'clientId',
   'dateOfBirth',

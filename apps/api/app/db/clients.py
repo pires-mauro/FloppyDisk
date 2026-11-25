@@ -103,6 +103,11 @@ def save_client(form: ClientSubmission, assessment: RiskReviewResponse) -> int:
         ''', (client[0], officer_id, assessment.score, assessment.tier.split()[0].lower(),
               form.officerComment or None, decision[form.finalDecision], assessment.preliminary, int(assessment.weightVersion),
               Jsonb(snapshot))).fetchone()[0]
+        if assessment.screening is not None:
+            conn.execute('''
+                INSERT INTO risk_assessment_sanctions_roles (risk_assessment_id, role)
+                SELECT %s, role FROM sanctions_roles WHERE role = ANY(%s::text[])
+            ''', (assessment_id, sorted(assessment.screening.confirmed_roles())))
         # The server creates these five factors in this fixed order. The full
         # weights, contributions and override reason are retained in the snapshot.
         conn.execute('''

@@ -2,10 +2,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from onboarding_shared.models import RiskCalculationResult
+from onboarding_shared.screening import ScreeningResult
 from app.models.client_models import ClientDetails
+from app.models.officer_models import OfficerLoginRequest
 
 
 class RiskReviewRequest(ClientDetails):
+    pass
+
+
+class OfficerRiskReviewRequest(RiskReviewRequest, OfficerLoginRequest):
     pass
 
 
@@ -26,6 +32,7 @@ class RiskReviewResponse(BaseModel):
     weightVersion: str
     overrideReason: str | None = None
     factors: list[RiskFactorResult]
+    screening: ScreeningResult | None = None
 
 
 class FinalizedClient(RiskReviewResponse):

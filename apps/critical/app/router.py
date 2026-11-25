@@ -1,7 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.models.model import HealthCheckResponse, RiskCalculationResult
 from onboarding_shared.models import RiskEvaluationRequest
+from onboarding_shared.screening import screening_outcome
+from app.screening import get_screening_result
 
 from app.scoring import SCORING_RULE_VERSION, evaluate_risk
 
@@ -19,10 +21,21 @@ def health_check():
 #  if critical component is up
 @router.post("/v1/evaluation/", tags=["Evaluation"])
 def post_evaluate_risk(request: RiskEvaluationRequest) -> RiskCalculationResult:
-    return evaluate_risk(
+    if request.screeningRequest is not None and not request.screeningToken:
+        raise HTTPException(status_code=401, detail='Screening callback credential is required')
+
+    calculation = evaluate_risk(
         request.weights, request.scores,
-        pep_confirmed=request.pepConfirmed, sanctions_match=request.sanctionsMatch,
+        pep_confirmed=request.pepConfirmed if request.screeningRequest is None else False,
+        sanctions_match=request.sanctionsMatch if request.screeningRequest is None else False,
     )
+    if request.screeningRequest is not None:
+        screening = get_screening_result(request.screeningRequest, request.screeningToken)
+        calculation.tier, calculation.overrideReason = screening_outcome(
+            calculation.tier, calculation.overrideReason, screening,
+        )
+        calculation.screening = screening
+    return calculation
 
 
 # Informational metadata only. Both services use the shared scoring rules;

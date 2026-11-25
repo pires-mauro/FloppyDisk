@@ -28,6 +28,47 @@ type Evaluation = {
   weightVersion: number | string
   overrideReason: string | null
   factors: RiskFactorResult[]
+  screening: Screening
+}
+
+type MatchDecision = 'confirmed' | 'dismissed'
+
+type ScreeningCandidate = {
+  entityId: string
+  name: string
+  birthDates: string[]
+  nationalities: string[]
+  countries: string[]
+  sources: string[]
+  roles: { role: string; redFlag: boolean | null }[]
+  decision: MatchDecision | null
+}
+
+type Screening = {
+  available: boolean
+  candidates: ScreeningCandidate[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isScreening(value: unknown): value is Screening {
+  return isRecord(value) && typeof value.available === 'boolean' &&
+    Array.isArray(value.candidates) && value.candidates.every((candidate) =>
+      isRecord(candidate) && typeof candidate.entityId === 'string' && typeof candidate.name === 'string' &&
+      isStringList(candidate.birthDates) && isStringList(candidate.nationalities) &&
+      isStringList(candidate.countries) && isStringList(candidate.sources) &&
+      (candidate.decision === null || candidate.decision === 'confirmed' || candidate.decision === 'dismissed') &&
+      Array.isArray(candidate.roles) && candidate.roles.every((entry) =>
+        isRecord(entry) && typeof entry.role === 'string' &&
+        (entry.redFlag === null || typeof entry.redFlag === 'boolean'),
+      ),
+    )
 }
 
 function formatScore(score: number) {
@@ -75,6 +116,9 @@ export function RiskReview({
   const [retry, setRetry] = useState(0)
   const [decisionLoading, setDecisionLoading] = useState(false)
   const [decisionError, setDecisionError] = useState('')
+  const [screeningDecisions, setScreeningDecisions] = useState<Record<string, MatchDecision>>({})
+  const screeningPending = !evaluation?.screening.available ||
+    evaluation.screening.candidates.some(({ decision }) => decision === null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -86,11 +130,15 @@ export function RiskReview({
 
       try {
         const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
-        const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
+        const endpoint = Object.keys(screeningDecisions).length ? 'screening/confirm' : 'evaluation'
+        const response = await fetch(`${apiUrl}/v1/risk/${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...client,
+            officerId: session.officerId,
+            officerPassword: session.password,
+            screeningDecisions,
             address: {
               street: client.addressStreet,
               city: client.addressCity,
@@ -115,7 +163,8 @@ export function RiskReview({
           !('weightVersion' in result) ||
           (typeof result.weightVersion !== 'string' && typeof result.weightVersion !== 'number') ||
           !('tier' in result) ||
-          (result.tier !== 'Low Risk' && result.tier !== 'Medium Risk' && result.tier !== 'High Risk')
+          (result.tier !== 'Low Risk' && result.tier !== 'Medium Risk' && result.tier !== 'High Risk') ||
+          !('screening' in result) || !isScreening(result.screening)
         ) {
           throw new Error('The backend returned an invalid risk score.')
         }
@@ -152,6 +201,7 @@ export function RiskReview({
               ? result.overrideReason
               : null,
           factors,
+          screening: result.screening,
         })
       } catch (requestError) {
         if (controller.signal.aborted) return
@@ -167,10 +217,10 @@ export function RiskReview({
 
     void loadScore()
     return () => controller.abort()
-  }, [client, retry])
+  }, [client, retry, screeningDecisions, session.officerId, session.password])
 
   async function submitDecision(decision: 'approve' | 'manual_review' | 'decline') {
-    if (!evaluation) return
+    if (!evaluation || loading || (decision !== 'decline' && screeningPending)) return
     setDecisionLoading(true)
     setDecisionError('')
     try {
@@ -182,6 +232,7 @@ export function RiskReview({
           ...client,
           officerId: session.officerId,
           officerPassword: session.password,
+          screeningDecisions,
           address: {
             street: client.addressStreet,
             city: client.addressCity,
@@ -377,6 +428,90 @@ export function RiskReview({
         )}
       </section>
 
+      {evaluation && (
+        <section className="data-view-card weight-editor" aria-labelledby="screening-title">
+          <div className="weight-editor-heading">
+            <div>
+              <h3 id="screening-title">OpenSanctions screening</h3>
+              <p>Compare the watchlist evidence with the client details before confirming a match.</p>
+            </div>
+          </div>
+          {!evaluation.screening.available ? (
+            <div className="data-view-alert" role="status">
+              <strong>Screening unavailable</strong>
+              <span>Check that the watchlist has been imported, then try again.</span>
+              <button type="button" className="retry-button" onClick={() => setRetry((attempt) => attempt + 1)}>
+                Retry screening
+              </button>
+            </div>
+          ) : evaluation.screening.candidates.length === 0 ? (
+            <p className="data-view-note">The watchlist returned no name or alias match.</p>
+          ) : (
+            <div className="data-table-scroll">
+              <table className="saved-risk-values">
+                <thead>
+                  <tr>
+                    <th scope="col">Candidate</th>
+                    <th scope="col">Date of birth</th>
+                    <th scope="col">Nationality and country</th>
+                    <th scope="col">Roles</th>
+                    <th scope="col">Match decision</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluation.screening.candidates.map((candidate) => (
+                    <tr key={candidate.entityId}>
+                      <th scope="row">
+                        <strong>{candidate.name}</strong>
+                        <div>{candidate.entityId}</div>
+                        {candidate.sources.length > 0 && <div>{candidate.sources.join(', ')}</div>}
+                      </th>
+                      <td>{candidate.birthDates.join(', ') || 'Unknown'}</td>
+                      <td>
+                        Nationality: {candidate.nationalities.join(', ') || 'Unknown'}
+                        <br />
+                        Country: {candidate.countries.join(', ') || 'Unknown'}
+                      </td>
+                      <td>
+                        {candidate.roles.map(({ role, redFlag }) => (
+                          <div key={role}>{role} ({redFlag === true ? 'Red flag' : redFlag === false ? 'Manual review' : 'Unclassified'})</div>
+                        ))}
+                      </td>
+                      <td>
+                        <label className="client-filter">
+                          <span className="sr-only">Match decision for {candidate.name}</span>
+                          <select
+                            value={candidate.decision ?? ''}
+                            disabled={loading || decisionLoading}
+                            onChange={(event) => {
+                              const decision = event.target.value
+                              setDecisionError('')
+                              setScreeningDecisions((current) => {
+                                const next = { ...current }
+                                if (decision === 'confirmed' || decision === 'dismissed') {
+                                  next[candidate.entityId] = decision
+                                } else {
+                                  delete next[candidate.entityId]
+                                }
+                                return next
+                              })
+                            }}
+                          >
+                            <option value="">Needs review</option>
+                            <option value="confirmed">Confirm identity</option>
+                            <option value="dismissed">Dismiss match</option>
+                          </select>
+                        </label>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="decision-panel" aria-labelledby="decision-title">
         <div>
           <span className="data-view-eyebrow">FINAL WORKFLOW ACTION</span>
@@ -401,7 +536,7 @@ export function RiskReview({
           <button
             type="button"
             className="decision-button approve"
-            disabled={!evaluation || evaluation.tier !== 'Low Risk' || decisionLoading}
+            disabled={!evaluation || evaluation.tier !== 'Low Risk' || screeningPending || decisionLoading}
             onClick={() => void submitDecision('approve')}
           >
             Approve
@@ -409,7 +544,7 @@ export function RiskReview({
           <button
             type="button"
             className="decision-button manual-review"
-            disabled={!evaluation || evaluation.tier !== 'Medium Risk' || decisionLoading}
+            disabled={!evaluation || evaluation.tier !== 'Medium Risk' || screeningPending || decisionLoading}
             onClick={() => void submitDecision('manual_review')}
           >
             Submit for Manual Review

@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from onboarding_shared.screening import MatchDecision
 
 
 CountryCode = Annotated[str, Field(pattern=r'^[A-Z]{2}$')]
@@ -36,8 +37,6 @@ class ClientDetails(BaseModel):
                 "email": "example@email.com",
                 "dialPrefix": "+352",
                 "phoneNumber": "012345678",
-                "pepConfirmed": False,
-                "sanctionsMatch": False,
             }
         },
     )
@@ -57,8 +56,7 @@ class ClientDetails(BaseModel):
     dialPrefix: Annotated[str, Field(pattern=r'^\+[1-9][0-9]{0,2}$')]
     phoneNumber: Annotated[str, Field(min_length=9, max_length=9, pattern=r'^[0-9]{9}$')]
     officerComment: Annotated[str, Field(max_length=500)] = ''
-    pepConfirmed: bool = False
-    sanctionsMatch: bool = False
+    screeningDecisions: dict[str, MatchDecision] = Field(default_factory=dict)
 
     @field_validator('dateOfBirth', mode='before')
     @classmethod
