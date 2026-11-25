@@ -1,25 +1,7 @@
-BEGIN;
+-- FloppyDisk: initial weight version and scoring reference values.
 
-ALTER TABLE weights
-    ALTER COLUMN country_of_residence_weight TYPE NUMERIC(5, 2),
-    ALTER COLUMN nationality_weight TYPE NUMERIC(5, 2),
-    ALTER COLUMN tax_domicile_weight TYPE NUMERIC(5, 2),
-    ALTER COLUMN professional_activity_weight TYPE NUMERIC(5, 2),
-    ALTER COLUMN income_weight TYPE NUMERIC(5, 2);
-
--- Also support explicitly reapplying this configuration to an existing local
--- database. Preserve assessments; only relax constraints for unavailable CPI.
-ALTER TABLE risk_assessments
-    DROP CONSTRAINT IF EXISTS risk_assessments_check,
-    DROP CONSTRAINT IF EXISTS risk_assessments_check1,
-    DROP CONSTRAINT IF EXISTS risk_assessments_final_score_check,
-    DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check,
-    ADD CONSTRAINT risk_assessments_final_score_check CHECK (final_score BETWEEN 0 AND 5);
-
-ALTER TABLE evaluated_risk_factors
-    ALTER COLUMN country_of_residence_risk DROP NOT NULL,
-    ALTER COLUMN nationality_risk DROP NOT NULL,
-    ALTER COLUMN tax_domicile_risk DROP NOT NULL;
+-- Support databases that used the previous order of the development seeds.
+ALTER TABLE weights ALTER COLUMN created_by_officer_id DROP NOT NULL;
 
 CREATE TEMPORARY TABLE default_country_risks (
     country_code TEXT PRIMARY KEY,
@@ -214,14 +196,10 @@ INSERT INTO default_country_risks (country_code, risk_score) VALUES
 DO $$
 DECLARE
     default_version INTEGER;
-    admin_officer_id INTEGER;
 BEGIN
-    SELECT id INTO admin_officer_id
-    FROM officers
-    WHERE internal_id = '0000000000';
-
-    IF admin_officer_id IS NULL THEN
-        RAISE EXCEPTION 'Default admin officer is missing';
+    -- Preserve the configuration and its owners when updating an existing database.
+    IF EXISTS (SELECT 1 FROM weights) THEN
+        RETURN;
     END IF;
 
     INSERT INTO weights (
@@ -229,10 +207,9 @@ BEGIN
         nationality_weight,
         tax_domicile_weight,
         professional_activity_weight,
-        income_weight,
-        created_by_officer_id
+        income_weight
     )
-    VALUES (1.5, 0.5, 1.0, 1.25, 0.75, admin_officer_id)
+    VALUES (1.5, 0.5, 1.0, 1.25, 0.75)
     RETURNING version_number INTO default_version;
 
     INSERT INTO country_of_residence_risk (weights_version, country_code, risk_score)
@@ -277,5 +254,3 @@ BEGIN
     WHERE name IN ('Standard', 'Cash-intensive', 'High-risk');
 END;
 $$;
-
-COMMIT;

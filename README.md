@@ -178,7 +178,7 @@ Create the root, backend, and frontend `.env` files as described above. Ensure t
 
 IF YOU ARE USING WINDOWS PLEASE HAVE DOCKER DESKTOP INSTALLED AND OPENEND IN THE BACKGROUND
 
-On Windows, double click `start.bat` in the file explorer. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
+On Windows, double click `start.bat` in the file explorer. It builds and starts the services, then opens the frontend in your browser.
 
 On Linux or macOS, run `bash start.sh` from the project root. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
 
@@ -195,7 +195,36 @@ py apps/api/migrations/apply.py  # Windows
 
 Docker Compose will build application images, download PostgreSQL if needed, and start all configured services. The migration runner applies pending numbered SQL files and records them in `schema_migrations`, so rerunning it skips completed migrations. The `start.bat` and `start.sh` scripts run this migration step automatically after PostgreSQL is ready.
 
-For an existing database created by an earlier version of the startup scripts, the runner detects the current schema and seeded reference data before recording those migrations as applied.
+The development baseline uses `001_schema.sql` for table definitions,
+`002_seed_data.sql` for reference data, `003_default_scoring.sql` for the initial
+scoring configuration, and `004_demo_officers.sql` for local demo accounts.
+The initial scoring configuration has no officer owner. Updates record the
+officer who saves them.
+Development databases created with the previous migration set need a fresh
+PostgreSQL volume to apply this baseline. The runner reports a legacy database
+before attempting to apply the new schema.
+
+### OpenSanctions watchlist data
+
+Download the full `default` dataset in FollowTheMoney JSON format and place it
+at `data/opensanctions/entities.ftm.json` in the project folder. Keep the export
+as a JSON-lines file. If the download is compressed, extract it first.
+[OpenSanctions bulk download instructions](https://www.opensanctions.org/docs/bulk/updates/)
+
+Both startup scripts import the file after applying migrations. Startup skips
+the import when the file is missing or its contents match the last successful
+import. The export is ignored by Git.
+
+To refresh the watchlist, replace the file with a new full export and run the
+startup script again. To refresh an already running stack, run this command
+from the project root after applying migrations:
+
+```bash
+docker compose exec -T api python -m app.import_opensanctions --file /screening-data/entities.ftm.json
+```
+
+The import replaces the watchlist with the contents of the new export.
+If the import fails, PostgreSQL keeps the previous watchlist.
 
 Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
@@ -337,7 +366,7 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. Officer passwords are verified by the API using salted scrypt hashes stored in `officers.password_hash`. Officers sign in through the web app once; the browser keeps the credentials in memory for the current page session and supplies them automatically when an authenticated action is submitted. They are cleared on logout or page reload and are never stored in browser storage or client snapshots. Weight and risk-value changes additionally require an admin officer.
 
-The local demo officers created by the migrations are:
+The local demo officers created by `004_demo_officers.sql` are:
 
 | Officer     | Internal ID  | Password          | Access           |
 | ----------- | ------------ | ----------------- | ---------------- |
@@ -394,7 +423,7 @@ already-applied migration does not update an existing database: its constraints
 must be updated separately, or the schema recreated on an empty development
 database. Existing configuration values and historical decisions are unchanged.
 
-The default configuration in migration 006 now uses `Scoring_Values.xlsx`:
+The default configuration in `003_default_scoring.sql` uses `Scoring_Values.xlsx`:
 CPI2025 country risk is `5 * (1 - CPI / 100)` for residence, nationality and tax
 domicile. 179 of the application's 193 UN countries have CPI values; the other
 14 trigger manual review with an unavailable score, not a zero/default risk.
@@ -404,18 +433,6 @@ excluded from the application's UN-country selections. Income risks are
 100k+). Profession risks are Standard 1, Cash-intensive 3.5, High-risk 5.
 Missing CPI does not bypass a PEP/sanctions rejection. Manual review preserves
 the unavailable score and original configuration version when completed.
-As requested, these changes edit migrations 001 and 006 instead of adding a
-new migration. Already-applied migrations are skipped by the migration runner.
-For an existing development database, explicitly reapply 006 to update the
-required column types/constraints and create a new analyst configuration version
-while keeping prior versions and decisions. In PowerShell from the repo root:
-
-```powershell
-Get-Content -Raw apps/api/migrations/006_default_scoring_configuration.sql | docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1
-```
-
-Rebuild the API and critical containers for the corresponding code changes.
-No existing database is reset automatically.
 
 The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
 loads the current configuration, calls `critical`, and returns the score, tier,
@@ -488,19 +505,8 @@ each image can install `shared`. For direct local development, rerun
 `python -m pip install -r requirements.txt` from each service directory. This
 installs the shared package without changing the services' startup commands.
 
-As with the earlier changes, existing applied migrations are not rerun. An
-existing database needs the old constraint prohibiting preliminary decisions
-removed before using this feature (no data is deleted):
-
-```sql
-ALTER TABLE risk_assessments
-    DROP CONSTRAINT IF EXISTS risk_assessments_check,
-    DROP CONSTRAINT IF EXISTS risk_assessments_check1,
-    DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check;
-```
-
-The updated migrations 001 and 006 already handle this for a new database or
-when configuration migration 006 is explicitly reapplied.
+The development baseline allows preliminary assessments to retain a final
+officer decision while awaiting confirmation from the scoring service.
 
 This project is under active development as part of a university assignment.
 

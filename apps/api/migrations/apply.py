@@ -10,6 +10,7 @@ from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent
 MIGRATION_NAME = re.compile(r"^[0-9]+_[A-Za-z0-9_-]+\.sql$")
+BASELINE = "001_schema.sql"
 PSQL = [
     "docker",
     "compose",
@@ -53,29 +54,14 @@ def initialize_history() -> None:
     legacy_schema_exists = run_psql(
         "-At",
         "-c",
-        "SELECT to_regclass('public.clients') IS NOT NULL",
+        "SELECT to_regclass('public.clients') IS NOT NULL AND NOT EXISTS ("
+        f"SELECT 1 FROM public.schema_migrations WHERE version = '{BASELINE}')",
     )
-    if legacy_schema_exists != "t":
-        return
-
-    run_psql(
-        "-c",
-        """
-        INSERT INTO public.schema_migrations (version)
-        VALUES ('001_initial_schema.sql')
-        ON CONFLICT DO NOTHING;
-
-        -- The previous startup scripts did not track migrations. Mark the
-        -- reference data migration only when its complete seed set is present.
-        INSERT INTO public.schema_migrations (version)
-        SELECT '002_reference_data.sql'
-        WHERE (SELECT count(*) FROM public.income_ranges
-               WHERE label IN ('0-10k', '10k-50k', '50k-100k', '100k+')) = 4
-          AND (SELECT count(*) FROM public.professional_categories
-               WHERE name IN ('Standard', 'Cash-intensive', 'High-risk')) = 3
-        ON CONFLICT DO NOTHING;
-        """,
-    )
+    if legacy_schema_exists == "t":
+        raise ValueError(
+            "This database predates the consolidated migration baseline. "
+            "Use a fresh development PostgreSQL volume to apply it."
+        )
 
 
 def main() -> int:
@@ -103,16 +89,17 @@ def main() -> int:
                 continue
 
             print(f"Applying: {migration.name}")
-            run_psql("-f", "-", input_text=migration.read_text(encoding="utf-8"))
+            sql = migration.read_text(encoding="utf-8")
             run_psql(
-                "-c",
-                "INSERT INTO public.schema_migrations (version) "
-                f"VALUES ('{migration.name}')",
+                "--single-transaction",
+                "-f",
+                "-",
+                input_text=f"{sql}\nINSERT INTO public.schema_migrations (version) VALUES ('{migration.name}');\n",
             )
 
         print("Database migrations are up to date.")
         return 0
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             print(error.stderr.strip(), file=sys.stderr)
         else:

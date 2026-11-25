@@ -1,3 +1,4 @@
+from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -10,6 +11,13 @@ from app.models.risk import RiskReviewResponse
 
 class DuplicateClient(Exception):
     pass
+
+
+def copy_assessment_roles(connection: Connection, previous_id: int, new_id: int) -> None:
+    connection.execute('''
+        INSERT INTO risk_assessment_sanctions_roles (risk_assessment_id, role)
+        SELECT %s, role FROM risk_assessment_sanctions_roles WHERE risk_assessment_id = %s
+    ''', (new_id, previous_id))
 
 
 def client_exists(document_number: str, issuing_country: str) -> bool:
@@ -147,4 +155,5 @@ def complete_manual_review(client_id: int, decision: ManualReviewDecision) -> bo
                    tax_domicile_risk, professional_activity_risk, income_risk
             FROM evaluated_risk_factors WHERE risk_assessment_id = %s
         ''', (saved_id, previous[0]))
+        copy_assessment_roles(conn, previous[0], saved_id)
         return previous[3]

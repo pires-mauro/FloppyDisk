@@ -3,6 +3,7 @@ import logging
 from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
+from app.db.clients import copy_assessment_roles
 from app.db.connection import get_connection
 from app.models.risk import RiskFactorResult, RiskReviewResponse
 from app.router import RISK_FACTORS, RiskServiceUnavailable, _call_risk_service
@@ -144,6 +145,7 @@ def recalculate_preliminary_assessments() -> int:
                     """,
                     (new_id, *(factor.score for factor in assessment.factors)),
                 )
+                copy_assessment_roles(conn, assessment_id, new_id)
                 recalculated += 1
         except (RiskServiceUnavailable, HTTPException) as exc:
             logger.warning(

@@ -1,6 +1,4 @@
 -- FloppyDisk: initial PostgreSQL 17 schema.
-BEGIN;
-
 CREATE TYPE marital_status_enum AS ENUM (
     'single', 'married', 'divorced', 'widowed', 'separated'
 );
@@ -56,7 +54,9 @@ CREATE TABLE officers (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     internal_id TEXT NOT NULL UNIQUE CHECK (internal_id ~ '^[0-9]{10}$'),
     name TEXT NOT NULL CHECK (btrim(name) <> ''),
-    work_email TEXT NOT NULL CHECK (btrim(work_email) <> '')
+    work_email TEXT NOT NULL CHECK (btrim(work_email) <> ''),
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    password_hash TEXT
 );
 
 CREATE UNIQUE INDEX officers_work_email_unique
@@ -93,7 +93,7 @@ CREATE TABLE weights (
     professional_activity_weight NUMERIC(5, 2) NOT NULL
         CHECK (professional_activity_weight BETWEEN 0 AND 5),
     income_weight NUMERIC(5, 2) NOT NULL CHECK (income_weight BETWEEN 0 AND 5),
-    created_by_officer_id INTEGER NOT NULL REFERENCES officers(id),
+    created_by_officer_id INTEGER REFERENCES officers(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (country_of_residence_weight + nationality_weight +
            tax_domicile_weight + professional_activity_weight + income_weight > 0)
@@ -141,11 +141,24 @@ CREATE TABLE professional_activity_risk (
 
 -- SANCTIONS REFERENCE INFORMATION
 CREATE TABLE sanctions_roles (
-    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    role TEXT NOT NULL UNIQUE CHECK (btrim(role) <> ''),
+    role TEXT PRIMARY KEY CHECK (btrim(role) <> ''),
     red_flag BOOLEAN NOT NULL
 );
 
+CREATE TABLE screening_people (
+    entity_id TEXT PRIMARY KEY,
+    caption TEXT NOT NULL,
+    names TEXT[] NOT NULL,
+    normalized_names TEXT[] NOT NULL,
+    birth_dates TEXT[] NOT NULL,
+    nationalities TEXT[] NOT NULL,
+    countries TEXT[] NOT NULL,
+    topics TEXT[] NOT NULL CHECK (cardinality(topics) > 0),
+    datasets TEXT[] NOT NULL
+);
+
+CREATE INDEX screening_people_normalized_names_idx
+    ON screening_people USING GIN (normalized_names);
 
 CREATE TABLE risk_assessments (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -158,7 +171,6 @@ CREATE TABLE risk_assessments (
     preliminary BOOLEAN NOT NULL DEFAULT TRUE,
     evaluation_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     weights_version INTEGER NOT NULL REFERENCES weights(version_number),
-    sanctions_role_id INTEGER REFERENCES sanctions_roles(id),
 
     -- Not sure about this one. Do we support changing a clients data after they have been added?
     input_snapshot JSONB NOT NULL
@@ -172,6 +184,15 @@ CREATE INDEX risk_assessments_client_time_idx
 CREATE INDEX risk_assessments_weights_version_idx
     ON risk_assessments(weights_version);
 
+CREATE TABLE risk_assessment_sanctions_roles (
+    risk_assessment_id INTEGER NOT NULL REFERENCES risk_assessments(id) ON DELETE CASCADE,
+    role TEXT NOT NULL REFERENCES sanctions_roles(role),
+    PRIMARY KEY (risk_assessment_id, role)
+);
+
+CREATE INDEX risk_assessment_sanctions_roles_role_idx
+    ON risk_assessment_sanctions_roles (role);
+
 -- Store actual evaluated scores, not only links to changeable lookup values.
 -- A shared primary key enforces at most one factor record per assessment.
 CREATE TABLE evaluated_risk_factors (
@@ -184,5 +205,3 @@ CREATE TABLE evaluated_risk_factors (
         CHECK (professional_activity_risk BETWEEN 0 AND 5),
     income_risk NUMERIC(5, 2) NOT NULL CHECK (income_risk BETWEEN 0 AND 5)
 );
-
-COMMIT;

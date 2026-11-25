@@ -23,6 +23,14 @@ echo Applying pending database migrations...
 py "apps\api\migrations\apply.py"
 if errorlevel 1 goto failed
 
+if exist "data\opensanctions\entities.ftm.json" (
+    echo Checking OpenSanctions data...
+    docker compose exec -T api python -m app.import_opensanctions --file /screening-data/entities.ftm.json
+    if errorlevel 1 goto failed
+) else (
+    echo OpenSanctions import skipped. Put entities.ftm.json in data\opensanctions to enable it.
+)
+
 start "" "http://localhost:5173"
 
 echo All containers are started.
