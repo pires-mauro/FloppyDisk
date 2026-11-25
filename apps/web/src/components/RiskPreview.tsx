@@ -123,23 +123,23 @@ function evaluateClient(
     })
   }
 
-  const totalWeight = factors.reduce((total, factor) => total + factor.weight, 0)
+  // Saved weights and risk values have at most two decimal places.
+  const totalWeightHundredths = factors.reduce(
+    (total, factor) => total + Math.round(factor.weight * 100), 0,
+  )
   const missingCountries = factors.filter((factor) => factor.score === null)
   const manualReviewReason = missingCountries.length
     ? `Missing CPI: ${missingCountries.map((factor) => `${factor.label}: ${factor.value}`).join(', ')}.`
     : null
-  const score =
-    totalWeight === 0 || manualReviewReason
-      ? null
-      : factors.reduce(
-          (total, factor) => total + factor.weight * (factor.score ?? 0),
-          0,
-        ) / totalWeight
-
-  if (score !== null) {
+  let score: number | null = null
+  if (totalWeightHundredths > 0 && !manualReviewReason) {
+    let weightedTotal = 0
     for (const factor of factors) {
-      factor.contribution = (factor.weight * (factor.score ?? 0)) / totalWeight
+      const weightedValue = Math.round(factor.weight * 100) * Math.round((factor.score ?? 0) * 100)
+      weightedTotal += weightedValue
+      factor.contribution = weightedValue / totalWeightHundredths / 100
     }
+    score = Math.floor(weightedTotal / totalWeightHundredths) / 100
   }
   if (manualReviewReason) {
     for (const factor of factors) factor.contribution = null
