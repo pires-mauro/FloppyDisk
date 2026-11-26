@@ -193,7 +193,6 @@ export function ClientViewing({ session }: { session: OfficerSession }) {
             key={reviewClient.internal_client_id}
             clientId={reviewClient.internal_client_id}
             clientName={reviewClient.client_name || 'Client'}
-            preliminary={reviewClient.assessment_status === 'Preliminary'}
             session={session}
             onCancel={() => setReviewClient(null)}
             onSaved={() => {

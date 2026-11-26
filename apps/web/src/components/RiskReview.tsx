@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ClientForm, Country } from '../form/types'
 import type { OfficerSession } from './OfficerLogin'
+import { formatScore, isRiskFactor, isScreening } from '../form/reviewEvidence'
+import type { MatchDecision, RiskFactorResult, Screening } from '../form/reviewEvidence'
+import { RiskFactorTable, ScreeningCandidatesTable } from './ReviewEvidence'
 
 type RiskReviewProps = {
   client: ClientForm
@@ -10,72 +13,15 @@ type RiskReviewProps = {
   onDecisionSaved: (preliminary: boolean) => void
 }
 
-type RiskTier = 'Low Risk' | 'Medium Risk' | 'High Risk'
-
-type RiskFactorResult = {
-  label: string
-  value: string
-  weight: number
-  score: number | null
-  contribution: number | null
-}
-
 type Evaluation = {
   preliminary: boolean
   scoringRuleVersion: string
   score: number | null
-  tier: RiskTier
+  tier: 'Low Risk' | 'Medium Risk' | 'High Risk'
   weightVersion: number | string
   overrideReason: string | null
   factors: RiskFactorResult[]
   screening: Screening
-}
-
-type MatchDecision = 'confirmed' | 'dismissed'
-
-type ScreeningCandidate = {
-  entityId: string
-  name: string
-  birthDates: string[]
-  nationalities: string[]
-  countries: string[]
-  sources: string[]
-  roles: { role: string; redFlag: boolean | null }[]
-  decision: MatchDecision | null
-}
-
-type Screening = {
-  available: boolean
-  candidates: ScreeningCandidate[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object'
-}
-
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isScreening(value: unknown): value is Screening {
-  return isRecord(value) && typeof value.available === 'boolean' &&
-    Array.isArray(value.candidates) && value.candidates.every((candidate) =>
-      isRecord(candidate) && typeof candidate.entityId === 'string' && typeof candidate.name === 'string' &&
-      isStringList(candidate.birthDates) && isStringList(candidate.nationalities) &&
-      isStringList(candidate.countries) && isStringList(candidate.sources) &&
-      (candidate.decision === null || candidate.decision === 'confirmed' || candidate.decision === 'dismissed') &&
-      Array.isArray(candidate.roles) && candidate.roles.every((entry) =>
-        isRecord(entry) && typeof entry.role === 'string' &&
-        (entry.redFlag === null || typeof entry.redFlag === 'boolean'),
-      ),
-    )
-}
-
-function formatScore(score: number) {
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(score)
 }
 
 async function getErrorMessage(response: Response) {
@@ -172,21 +118,7 @@ export function RiskReview({
         const score = result.score
         const factors =
           'factors' in result && Array.isArray(result.factors)
-            ? result.factors.filter(
-                (factor): factor is RiskFactorResult =>
-                  factor !== null &&
-                  typeof factor === 'object' &&
-                  'label' in factor &&
-                  typeof factor.label === 'string' &&
-                  'value' in factor &&
-                  typeof factor.value === 'string' &&
-                  'weight' in factor &&
-                  typeof factor.weight === 'number' &&
-                  'score' in factor &&
-                  (typeof factor.score === 'number' || factor.score === null) &&
-                  'contribution' in factor &&
-                  (typeof factor.contribution === 'number' || factor.contribution === null),
-              )
+            ? result.factors.filter(isRiskFactor)
             : []
         setEvaluation({
           preliminary: result.preliminary,
@@ -397,30 +329,7 @@ export function RiskReview({
               {` · Rules: ${evaluation.scoringRuleVersion}`}
               {evaluation.overrideReason && ` · Override: ${evaluation.overrideReason}`}
             </p>
-            <div className="risk-preview-table-wrap">
-              <table className="risk-preview-table">
-                <thead>
-                  <tr>
-                    <th>Risk factor</th>
-                    <th>Selected value</th>
-                    <th>Weight</th>
-                    <th>Risk value</th>
-                    <th>Contribution</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evaluation.factors.map((factor) => (
-                    <tr key={factor.label}>
-                      <td>{factor.label}</td>
-                      <td>{factor.value}</td>
-                      <td>{factor.weight}</td>
-                      <td>{factor.score ?? 'CPI unavailable'}</td>
-                      <td>{factor.contribution?.toFixed(2) ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <RiskFactorTable factors={evaluation.factors} />
             <p className="risk-score-status">
               Score and risk-tier classification supplied by the backend using {evaluation.preliminary ? 'cached rules' : 'the scoring service'}.
             </p>
@@ -447,67 +356,19 @@ export function RiskReview({
           ) : evaluation.screening.candidates.length === 0 ? (
             <p className="data-view-note">The watchlist returned no name or alias match.</p>
           ) : (
-            <div className="data-table-scroll">
-              <table className="saved-risk-values">
-                <thead>
-                  <tr>
-                    <th scope="col">Candidate</th>
-                    <th scope="col">Date of birth</th>
-                    <th scope="col">Nationality and country</th>
-                    <th scope="col">Roles</th>
-                    <th scope="col">Match decision</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evaluation.screening.candidates.map((candidate) => (
-                    <tr key={candidate.entityId}>
-                      <th scope="row">
-                        <strong>{candidate.name}</strong>
-                        <div>{candidate.entityId}</div>
-                        {candidate.sources.length > 0 && <div>{candidate.sources.join(', ')}</div>}
-                      </th>
-                      <td>{candidate.birthDates.join(', ') || 'Unknown'}</td>
-                      <td>
-                        Nationality: {candidate.nationalities.join(', ') || 'Unknown'}
-                        <br />
-                        Country: {candidate.countries.join(', ') || 'Unknown'}
-                      </td>
-                      <td>
-                        {candidate.roles.map(({ role, redFlag }) => (
-                          <div key={role}>{role} ({redFlag === true ? 'Red flag' : redFlag === false ? 'Manual review' : 'Unclassified'})</div>
-                        ))}
-                      </td>
-                      <td>
-                        <label className="client-filter">
-                          <span className="sr-only">Match decision for {candidate.name}</span>
-                          <select
-                            value={candidate.decision ?? ''}
-                            disabled={loading || decisionLoading}
-                            onChange={(event) => {
-                              const decision = event.target.value
-                              setDecisionError('')
-                              setScreeningDecisions((current) => {
-                                const next = { ...current }
-                                if (decision === 'confirmed' || decision === 'dismissed') {
-                                  next[candidate.entityId] = decision
-                                } else {
-                                  delete next[candidate.entityId]
-                                }
-                                return next
-                              })
-                            }}
-                          >
-                            <option value="">Needs review</option>
-                            <option value="confirmed">Confirm identity</option>
-                            <option value="dismissed">Dismiss match</option>
-                          </select>
-                        </label>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ScreeningCandidatesTable
+              candidates={evaluation.screening.candidates}
+              disabled={loading || decisionLoading}
+              onDecisionChange={(entityId, decision) => {
+                setDecisionError('')
+                setScreeningDecisions((current) => {
+                  const next = { ...current }
+                  if (decision) next[entityId] = decision
+                  else delete next[entityId]
+                  return next
+                })
+              }}
+            />
           )}
         </section>
       )}

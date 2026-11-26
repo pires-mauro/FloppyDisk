@@ -1053,6 +1053,15 @@
   gap: 14px;
 }
 
+.manual-review {
+  padding: 18px;
+}
+
+.manual-review-header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .risk-intro {
   display: flex;
   align-items: center;

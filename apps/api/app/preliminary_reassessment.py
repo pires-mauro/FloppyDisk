@@ -57,6 +57,14 @@ def recalculate_preliminary_assessments() -> int:
     for assessment_id in assessment_ids:
         try:
             with get_connection() as conn:
+                # Use the same client lock and order as manual decisions. Read
+                # the latest assessment only after acquiring it.
+                locked_client = conn.execute('''
+                    SELECT c.id FROM clients c JOIN risk_assessments a ON a.client_id = c.id
+                    WHERE a.id = %s FOR NO KEY UPDATE OF c SKIP LOCKED
+                ''', (assessment_id,)).fetchone()
+                if locked_client is None:
+                    continue
                 row = conn.execute(
                     LOCK_PRELIMINARY_QUERY, (assessment_id,)
                 ).fetchone()

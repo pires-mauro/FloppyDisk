@@ -86,6 +86,7 @@ class ManualReviewDecision(BaseModel):
     officerPassword: SecretStr = Field(min_length=1, max_length=1024)
     finalDecision: Literal['approve', 'decline']
     officerComment: Annotated[str, Field(max_length=500)] = ''
+    assessmentId: Annotated[int, Field(gt=0)] | None = None
 
 
 class ClientDecisionSaved(BaseModel):
@@ -116,3 +117,19 @@ class ClientOverview(BaseModel):
 
 class OfficerClientOverview(ClientOverview):
     document_number: DocumentNumber
+
+
+class SavedClientProfile(BaseModel):
+    name: str
+    documentNumber: str
+    issuingCountry: str
+    dateOfBirth: date
+    nationality: str
+    taxDomicile: str
+    countryOfResidence: str
+    address: ClientAddress
+    income: str
+    profession: str
+    maritalStatus: str
+    email: str
+    phone: str

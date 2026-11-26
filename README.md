@@ -452,11 +452,13 @@ versions are not used. The saved record uses the version actually used for the
 final calculation, including any weights or risk values saved since preview.
 
 For a medium-risk client, submitting "Submit for Manual Review" saves the client
-with a pending manual-review decision. In Client viewing, "Complete review"
-allows an officer to approve or decline it. This calls
-`POST /api/v1/clients/{client_id}/decision`, which checks the saved pending state
-the signed-in officer credentials, then accepts the reviewer's outcome without calling
-`critical` or enforcing an automatic tier decision. It appends a decision record,
+with a pending manual-review decision. In Client viewing, "Complete review" loads
+the client profile, latest saved assessment, risk factors, and screening evidence
+through the authenticated `POST /api/v1/clients/{client_id}/details` endpoint.
+The review screen sends the displayed assessment ID to
+`POST /api/v1/clients/{client_id}/decision` when the officer approves or declines.
+The API checks officer credentials and the pending assessment, and asks the
+reviewer to reload if the assessment changed. It appends a decision record,
 preserving the original scoring version, score, breakdown and initial submission.
 Concurrent or repeated completion is blocked once the pending review is resolved.
 

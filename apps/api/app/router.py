@@ -5,7 +5,7 @@ from typing import Annotated
 from urllib.error import HTTPError as URLHTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Response
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
 from onboarding_shared.scoring import calculate_risk
@@ -18,6 +18,7 @@ from app.db.clients import (
     list_clients,
     save_client,
     complete_manual_review,
+    get_saved_client_review,
 )
 from app.db.reference_data import (
     get_countries,
@@ -52,6 +53,7 @@ from app.models.risk import (
     RiskFactorResult,
     RiskReviewRequest,
     RiskReviewResponse,
+    SavedClientReview,
     FinalizedClient,
 )
 from app.models.screening_models import ScreeningRole, ScreeningRoleUpdate
@@ -341,14 +343,16 @@ def submit_manual_review(client_id: int, decision: ManualReviewDecision):
     )
 
 
-@router.get(
-    "/v1/clients/{client_id}", 
-    tags=["Clients"]
-)
-def get_client(client_id: str):
-    return {
-        "message": f"Client {client_id} retrieved successfully",
-    }
+@router.post("/v1/clients/{client_id}/details", response_model=SavedClientReview, tags=["Clients"])
+def get_client_details(client_id: Annotated[int, Path(gt=0)], officer: OfficerLoginRequest, response: Response):
+    try:
+        review = get_saved_client_review(client_id, officer)
+    except OfficerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    if review is None:
+        raise HTTPException(status_code=404, detail="No saved assessment was found for this client")
+    response.headers["Cache-Control"] = "no-store"
+    return review
 
 
 @router.patch(
