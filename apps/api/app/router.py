@@ -5,11 +5,12 @@ from typing import Annotated
 from urllib.error import HTTPError as URLHTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Header, HTTPException, Path, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Response, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 from psycopg.errors import ForeignKeyViolation
 from onboarding_shared.scoring import calculate_risk
-from onboarding_shared.models import RiskEvaluationRequest
+from onboarding_shared.models import ErrorResponse, RiskEvaluationRequest, ValidationErrorResponse
 from onboarding_shared.screening import ScreeningRequest, ScreeningResult, screening_outcome
 
 from app.db.clients import (
@@ -33,7 +34,6 @@ from app.db.weights import (
 )
 from app.db.connection import get_connection
 from app.models.client_models import (
-    ClientOverview,
     ClientSubmission,
     DuplicateResponse,
     ManualReviewDecision,
@@ -63,10 +63,31 @@ from app.officer_auth import (
     OfficerNotAdmin,
     authenticate_officer,
 )
+from app.officer_http_auth import OfficerBasicAuth
 from app.screening_auth import issue_token, verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+screening_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="ScreeningCallback",
+    description="Short-lived credential issued by the onboarding API for this exact screening request.",
+)
+officer_basic = OfficerBasicAuth(
+    scheme_name="OfficerBasic",
+    description="Officer ID and password for the screening role settings.",
+    realm="FloppyDisk",
+)
+
+_INVALID_OFFICER = {"model": ErrorResponse, "description": "Officer credentials are invalid."}
+_ADMIN_REQUIRED = {"model": ErrorResponse, "description": "An admin officer is required."}
+_INVALID_INPUT = {"model": ErrorResponse | ValidationErrorResponse, "description": "Invalid request or input values."}
+_RISK_ERRORS = {
+    401: _INVALID_OFFICER,
+    409: {"model": ErrorResponse, "description": "The scoring configuration is unavailable or inconsistent."},
+    422: _INVALID_INPUT,
+    502: {"model": ErrorResponse, "description": "The scoring service returned an error or an invalid result."},
+}
 
 
 class RiskServiceUnavailable(Exception):
@@ -76,7 +97,8 @@ class RiskServiceUnavailable(Exception):
 @router.get(
     "/health",
     response_model=HealthCheckResponse,
-    tags=["Health"]
+    tags=["Health"],
+    summary="Check onboarding API health",
 )
 def health_check() -> HealthCheckResponse:
     return HealthCheckResponse(
@@ -89,6 +111,8 @@ def health_check() -> HealthCheckResponse:
     "/v1/officers/login",
     response_model=OfficerLoginResponse,
     tags=["Officers"],
+    summary="Sign in an officer",
+    responses={401: _INVALID_OFFICER},
 )
 def login_officer(request: OfficerLoginRequest) -> OfficerLoginResponse:
     try:
@@ -183,16 +207,30 @@ def _cached_risk(
     return result, True
 
 
-@router.post("/internal/screening", response_model=ScreeningResult, include_in_schema=False)
-def screening_callback(request: ScreeningRequest, authorization: Annotated[str, Header()] = ""):
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not verify_token(request, token):
+@router.post(
+    "/internal/screening",
+    response_model=ScreeningResult,
+    tags=["Internal"],
+    summary="Look up watchlist candidates for the scoring service",
+    responses={401: {"model": ErrorResponse, "description": "The screening callback credential is missing or invalid."}},
+)
+def screening_callback(
+    request: ScreeningRequest,
+    credential: Annotated[HTTPAuthorizationCredentials | None, Security(screening_bearer)],
+) -> ScreeningResult:
+    if credential is None or not verify_token(request, credential.credentials):
         raise HTTPException(status_code=401, detail="Invalid screening callback credential")
     return screen_client(request)
 
 
-@router.post("/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"])
-@router.post("/v1/risk/screening/confirm", response_model=RiskReviewResponse, tags=["Risk"])
+@router.post(
+    "/v1/risk/evaluation", response_model=RiskReviewResponse, tags=["Risk"],
+    summary="Evaluate onboarding risk and screen the client", responses=_RISK_ERRORS,
+)
+@router.post(
+    "/v1/risk/screening/confirm", response_model=RiskReviewResponse, tags=["Risk"],
+    summary="Reevaluate risk after an officer resolves screening candidates", responses=_RISK_ERRORS,
+)
 def evaluate_risk(request: OfficerRiskReviewRequest) -> RiskReviewResponse:
     try:
         with get_connection() as connection:
@@ -270,7 +308,11 @@ def _evaluate_risk(request: RiskReviewRequest) -> RiskReviewResponse:
 
 
 
-@router.get("/v1/clients/check-duplicate", response_model=DuplicateResponse, tags=["Clients"])
+@router.get(
+    "/v1/clients/check-duplicate", response_model=DuplicateResponse, tags=["Clients"],
+    summary="Check whether a document number and issuing country already exist",
+    responses={422: _INVALID_INPUT},
+)
 def check_duplicate(
     client_id: Annotated[str, Query(alias="clientId", min_length=1, max_length=100)],
     issuing_country: Annotated[str, Query(alias="issuingCountry", pattern="^[A-Z]{2}$")],
@@ -281,12 +323,11 @@ def check_duplicate(
     return {"exists": client_exists(document_number, issuing_country)}
 
 
-@router.get("/v1/clients", response_model=list[ClientOverview], tags=["Clients"])
-def get_clients():
-    return list_clients()
-
-
-@router.post("/v1/clients/overview", response_model=list[OfficerClientOverview], tags=["Clients"])
+@router.post(
+    "/v1/clients/overview", response_model=list[OfficerClientOverview], tags=["Clients"],
+    summary="List client records with document numbers for a signed-in officer",
+    responses={401: _INVALID_OFFICER},
+)
 def get_officer_client_overview(officer: OfficerLoginRequest):
     try:
         return list_clients(officer)
@@ -294,7 +335,14 @@ def get_officer_client_overview(officer: OfficerLoginRequest):
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
-@router.post("/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"])
+@router.post(
+    "/v1/clients", response_model=FinalizedClient, status_code=201, tags=["Clients"],
+    summary="Save an onboarding decision and its assessment",
+    responses={
+        **_RISK_ERRORS,
+        409: {"model": ErrorResponse, "description": "Duplicate client, unresolved screening, or a conflicting assessment or decision."},
+    },
+)
 def post_client(submission: ClientSubmission):
     try:
         with get_connection() as connection:
@@ -328,7 +376,14 @@ def post_client(submission: ClientSubmission):
     )
 
 
-@router.post('/v1/clients/{client_id}/decision', response_model=ClientDecisionSaved, tags=['Clients'])
+@router.post(
+    "/v1/clients/{client_id}/decision", response_model=ClientDecisionSaved, tags=["Clients"],
+    summary="Complete a pending manual review",
+    responses={
+        401: _INVALID_OFFICER,
+        409: {"model": ErrorResponse, "description": "The client is missing, the review is complete, or the assessment changed."},
+    },
+)
 def submit_manual_review(client_id: int, decision: ManualReviewDecision):
     try:
         preliminary = complete_manual_review(client_id, decision)
@@ -343,7 +398,14 @@ def submit_manual_review(client_id: int, decision: ManualReviewDecision):
     )
 
 
-@router.post("/v1/clients/{client_id}/details", response_model=SavedClientReview, tags=["Clients"])
+@router.post(
+    "/v1/clients/{client_id}/details", response_model=SavedClientReview, tags=["Clients"],
+    summary="Get the client profile and saved assessment evidence",
+    responses={
+        401: _INVALID_OFFICER,
+        404: {"model": ErrorResponse, "description": "No saved assessment was found for this client."},
+    },
+)
 def get_client_details(client_id: Annotated[int, Path(gt=0)], officer: OfficerLoginRequest, response: Response):
     try:
         review = get_saved_client_review(client_id, officer)
@@ -355,27 +417,16 @@ def get_client_details(client_id: Annotated[int, Path(gt=0)], officer: OfficerLo
     return review
 
 
-@router.patch(
-    "/v1/clients/{client_id}", 
-    tags=["Clients"]
+@router.post(
+    "/v1/weights", response_model=WeightVersion, status_code=201, tags=["Weights"],
+    summary="Save a new scoring configuration version",
+    responses={
+        401: _INVALID_OFFICER,
+        403: _ADMIN_REQUIRED,
+        409: {"model": ErrorResponse, "description": "The saved scoring configuration is inconsistent."},
+        422: _INVALID_INPUT,
+    },
 )
-def update_client(client_id: str):  
-    return {
-        "message": f"Client {client_id} updated successfully",
-    }
-
-
-@router.delete(
-    "/v1/clients/{client_id}", 
-    tags=["Clients"]
-)
-def delete_client(client_id: str):
-    return {
-        "message": f"Client {client_id} deleted successfully",
-    }
-
-
-@router.post("/v1/weights", response_model=WeightVersion, status_code=201, tags=["Weights"])
 def post_weights(update: WeightUpdate):
     try:
         return {"version": save_configuration(update)}
@@ -389,20 +440,29 @@ def post_weights(update: WeightUpdate):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/v1/screening/roles/list", response_model=list[ScreeningRole], tags=["Screening"])
-def get_screening_roles(officer: OfficerLoginRequest):
+@router.get(
+    "/v1/screening/roles", response_model=list[ScreeningRole], tags=["Screening"],
+    summary="List screening roles and their saved flags", responses={401: _INVALID_OFFICER},
+)
+def get_screening_roles(officer: Annotated[OfficerLoginRequest, Security(officer_basic)], response: Response):
     try:
-        return list_screening_roles(officer)
+        roles = list_screening_roles(officer)
     except OfficerAuthenticationError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        raise officer_basic.make_not_authenticated_error() from exc
+    response.headers["Cache-Control"] = "no-store"
+    return roles
 
 
-@router.put("/v1/screening/roles", response_model=list[ScreeningRole], tags=["Screening"])
-def put_screening_roles(update: ScreeningRoleUpdate):
+@router.put(
+    "/v1/screening/roles", response_model=list[ScreeningRole], tags=["Screening"],
+    summary="Update screening flags for the requested roles",
+    responses={401: _INVALID_OFFICER, 403: _ADMIN_REQUIRED, 422: _INVALID_INPUT},
+)
+def put_screening_roles(update: ScreeningRoleUpdate, officer: Annotated[OfficerLoginRequest, Security(officer_basic)]):
     try:
-        return update_screening_roles(update)
+        return update_screening_roles(officer, update)
     except OfficerAuthenticationError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        raise officer_basic.make_not_authenticated_error() from exc
     except OfficerNotAdmin as exc:
         raise HTTPException(status_code=403, detail="Only admin officers may update role flags") from exc
     except ValueError as exc:
@@ -419,40 +479,33 @@ def read_configuration(version: int | None = None):
     return result
 
 
-@router.get("/v1/weights/latest", response_model=ScoringConfiguration, tags=["Weights"])
+_CONFIGURATION_ERRORS = {
+    404: {"model": ErrorResponse, "description": "No scoring configuration was found."},
+    409: {"model": ErrorResponse, "description": "The saved scoring configuration is inconsistent."},
+}
+
+
+@router.get(
+    "/v1/weights/latest", response_model=ScoringConfiguration, tags=["Weights"],
+    summary="Get the latest scoring configuration", responses=_CONFIGURATION_ERRORS,
+)
 def get_latest_weights():
     return read_configuration()
 
 
-@router.get("/v1/weights/{version}", response_model=ScoringConfiguration, tags=["Weights"])
+@router.get(
+    "/v1/weights/{version}", response_model=ScoringConfiguration, tags=["Weights"],
+    summary="Get a saved scoring configuration by version", responses=_CONFIGURATION_ERRORS,
+)
 def get_weights(version: int):
     return read_configuration(version)
-
-
-@router.post(
-    "/v1/officers",
-    tags=["Officers"]
-)
-def post_officer():
-    return {
-        "message": "Officer created successfully",
-    }
-
-
-@router.get(
-    "/v1/officers/{officer_id}",
-    tags=["Officers"]
-)
-def get_officer(officer_id: str):
-    return {
-        "message": f"Officer {officer_id} retrieved successfully",
-    }
 
 
 @router.get(
     "/v1/income-ranges",
     response_model=list[IncomeRangeResponse],
     tags=["Reference data"],
+    summary="List available income ranges",
 )
 def read_income_ranges():
     return get_income_ranges()
@@ -462,6 +515,7 @@ def read_income_ranges():
     "/v1/professional-categories",
     response_model=list[ProfessionalCategoryResponse],
     tags=["Reference data"],
+    summary="List available professional categories",
 )
 def read_professional_categories():
     return get_professional_categories()
@@ -470,6 +524,7 @@ def read_professional_categories():
     "/countries",
     response_model=list[CountryResponse],
     tags=["Reference data"],
+    summary="List available countries",
 )
 def read_countries():
     return get_countries()

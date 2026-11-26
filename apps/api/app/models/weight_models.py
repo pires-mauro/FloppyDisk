@@ -28,12 +28,13 @@ class FactorWeights(BaseModel):
 class WeightUpdate(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
-        json_schema_extra={'example': {
-            'employee_id': '0000000001',
+        json_schema_extra={'examples': [{
+            'employee_id': '0000000000',
+            'password': 'replace-with-officer-password',
             'weights': {'country_weight': 3, 'nationality_weight': 2,
                         'tax_domicile_weight': 2, 'professional_activity_weight': 4,
                         'income_weight': 1},
-        }},
+        }]},
     )
     employee_id: str = Field(pattern=r'^[0-9]{10}$')
     password: SecretStr = Field(min_length=1, max_length=1024)

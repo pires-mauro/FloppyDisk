@@ -226,6 +226,11 @@ docker compose exec -T api python -m app.import_opensanctions --file /screening-
 The import replaces the watchlist with the contents of the new export.
 If the import fails, PostgreSQL keeps the previous watchlist.
 
+To test role flags in the onboarding API's Swagger UI, select **Authorize**
+and enter an officer ID and password under **OfficerBasic**.
+`GET /api/v1/screening/roles` takes no request body. Administrators can send
+`{"updates":{"role.pep":false}}` to `PUT /api/v1/screening/roles` to update a flag.
+
 Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
 ### 3. Check Service Status

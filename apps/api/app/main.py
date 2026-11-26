@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
+from app.models.common import ApiIndexResponse
 from app.preliminary_reassessment import recalculate_preliminary_assessments
 from app.router import router
 
@@ -42,9 +43,6 @@ app = FastAPI(
 app.include_router(router, prefix="/api")
 
 
-@app.get("/")
-def root():
-    return {
-        "message": "Welcome to the Bank Onboarding API",
-        "docs": "/docs",
-    }
+@app.get("/", response_model=ApiIndexResponse, tags=["Health"], summary="Get API links")
+def root() -> ApiIndexResponse:
+    return ApiIndexResponse(message="Welcome to the Bank Onboarding API", docs="/docs")

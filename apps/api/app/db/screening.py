@@ -71,10 +71,10 @@ def list_screening_roles(officer: OfficerLoginRequest) -> list[ScreeningRole]:
         return _list_roles(connection)
 
 
-def update_screening_roles(update: ScreeningRoleUpdate) -> list[ScreeningRole]:
+def update_screening_roles(officer: OfficerLoginRequest, update: ScreeningRoleUpdate) -> list[ScreeningRole]:
     with get_connection() as connection:
         authenticate_officer(
-            connection, update.officerId, update.officerPassword.get_secret_value(), require_admin=True,
+            connection, officer.officerId, officer.officerPassword.get_secret_value(), require_admin=True,
         )
         known_roles = {entry.role for entry in _list_roles(connection)}
         if update.updates.keys() - known_roles:

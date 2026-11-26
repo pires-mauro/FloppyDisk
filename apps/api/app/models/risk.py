@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from onboarding_shared.models import RiskCalculationResult
 from onboarding_shared.screening import ScreeningResult
-from app.models.client_models import ClientDetails, SavedClientProfile
-from app.models.officer_models import OfficerLoginRequest
+from app.models.client_models import CLIENT_DETAILS_EXAMPLE, ClientDetails, SavedClientProfile
+from app.models.officer_models import OFFICER_CREDENTIALS_EXAMPLE, OfficerLoginRequest
 
 
 class RiskReviewRequest(ClientDetails):
@@ -13,7 +13,13 @@ class RiskReviewRequest(ClientDetails):
 
 
 class OfficerRiskReviewRequest(RiskReviewRequest, OfficerLoginRequest):
-    pass
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {**CLIENT_DETAILS_EXAMPLE, **OFFICER_CREDENTIALS_EXAMPLE},
+            {**CLIENT_DETAILS_EXAMPLE, **OFFICER_CREDENTIALS_EXAMPLE,
+             "screeningDecisions": {"example-entity-id": "confirmed"}},
+        ],
+    })
 
 
 class RiskFactorResult(BaseModel):

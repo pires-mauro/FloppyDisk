@@ -124,13 +124,12 @@ def client_exists(document_number: str, issuing_country: str) -> bool:
         ''', (document_number, issuing_country)).fetchone()[0]
 
 
-def list_clients(officer: OfficerLoginRequest | None = None):
+def list_clients(officer: OfficerLoginRequest):
     with get_connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-        if officer is not None:
-            authenticate_officer(conn, officer.officerId, officer.officerPassword.get_secret_value())
+        authenticate_officer(conn, officer.officerId, officer.officerPassword.get_secret_value())
         cursor.execute('''
             SELECT c.id AS internal_client_id, c.name AS client_name,
-                   CASE WHEN %s THEN c.id_number END AS document_number,
+                   c.id_number AS document_number,
                    country.name AS issuing_country,
                    initcap(a.assigned_tier::text) || ' Risk' AS risk_tier,
                    a.decision AS final_decision, o.internal_id AS officer_id,
@@ -146,7 +145,7 @@ def list_clients(officer: OfficerLoginRequest | None = None):
             ) a ON TRUE
             JOIN officers o ON o.id = a.officer_id
             ORDER BY a.evaluation_time DESC, c.id DESC
-        ''', (officer is not None,))
+        ''')
         return cursor.fetchall()
 
 

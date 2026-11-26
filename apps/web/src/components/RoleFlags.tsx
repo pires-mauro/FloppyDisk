@@ -49,10 +49,13 @@ async function requestRoleFlags(
   { updates, signal }: { updates?: Record<string, boolean>; signal?: AbortSignal },
 ): Promise<RoleFlag[]> {
   const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
-  const response = await fetch(`${apiUrl}/v1/screening/roles${updates ? '' : '/list'}`, {
-    method: updates ? 'PUT' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ officerId, officerPassword, updates }),
+  const credentials = new TextEncoder().encode(`${officerId}:${officerPassword}`)
+  const headers = new Headers({ Authorization: `Basic ${btoa(String.fromCharCode(...credentials))}` })
+  if (updates) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${apiUrl}/v1/screening/roles`, {
+    method: updates ? 'PUT' : 'GET',
+    headers,
+    body: updates ? JSON.stringify({ updates }) : undefined,
     signal,
   })
   const payload: unknown = await response.json()
