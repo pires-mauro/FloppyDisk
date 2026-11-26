@@ -138,6 +138,16 @@ VITE_API_URL=http://localhost:8000/api
 
 ---
 
+## Watchlist file
+
+Download the full OpenSanctions default collection in FollowTheMoney JSON format.
+(https://data.opensanctions.org/datasets/latest/default/entities.ftm.json)
+
+Save the file as data/opensanctions/entities.ftm.json. The same URL serves newer snapshots of
+this dataset in the same format. No hosted API key is needed.
+
+---
+
 ## Getting Started
 
 ### 1. Configure Environment
