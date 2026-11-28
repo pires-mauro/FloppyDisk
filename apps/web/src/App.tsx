@@ -6,6 +6,7 @@ import { FinancialSection } from './components/FinancialSection'
 import { OfficerSection } from './components/OfficerSection'
 import { RiskReview } from './components/RiskReview'
 import { RiskPreview } from './components/RiskPreview'
+import { RoleFlags } from './components/RoleFlags'
 import { WeightViewing } from './components/WeightViewing'
 import { OfficerLogin, type OfficerSession } from './components/OfficerLogin'
 import { unCountries } from './form/options'
@@ -22,7 +23,7 @@ function App() {
   const [countriesRetry, setCountriesRetry] = useState(0)
   const [submitted, setSubmitted] = useState(false)
   const [step, setStep] = useState<'details' | 'risk'>('details')
-  const [activeTab, setActiveTab] = useState<'onboarding' | 'clients' | 'weights'>(
+  const [activeTab, setActiveTab] = useState<'onboarding' | 'clients' | 'weights' | 'role-flags'>(
     'onboarding',
   )
   const [duplicateError, setDuplicateError] = useState('')
@@ -112,14 +113,6 @@ function App() {
   function updateField(field: keyof ClientForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }))
     setDuplicateError('')
-    setDecisionSaved(false)
-  }
-
-  function updateRiskFlag(
-    field: 'pepConfirmed' | 'sanctionsMatch',
-    value: boolean,
-  ) {
-    setForm((current) => ({ ...current, [field]: value }))
     setDecisionSaved(false)
   }
 
@@ -263,6 +256,14 @@ function App() {
         >
           Weight viewing
         </button>
+        <button
+          type="button"
+          className="primary-tab"
+          aria-current={activeTab === 'role-flags' ? 'page' : undefined}
+          onClick={() => setActiveTab('role-flags')}
+        >
+          Role flags
+        </button>
       </nav>
 
       {!isOnboarding && activeTab === 'clients' && (
@@ -271,6 +272,7 @@ function App() {
       {!isOnboarding && activeTab === 'weights' && (
         <WeightViewing countries={countries} session={officerSession} />
       )}
+      {activeTab === 'role-flags' && <RoleFlags session={officerSession} />}
 
       {isOnboarding && <>
       <section className="intro">
@@ -353,7 +355,6 @@ function App() {
           form={form}
           errors={errors}
           onChange={updateField}
-          onRiskFlagChange={updateRiskFlag}
         />
         <RiskPreview client={form} countries={countries} />
         {duplicateError && (

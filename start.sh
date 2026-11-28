@@ -38,6 +38,13 @@ done
 echo "Applying pending database migrations..."
 python3 "apps/api/migrations/apply.py"
 
+if [ -f "data/opensanctions/entities.ftm.json" ]; then
+    echo "Checking OpenSanctions data..."
+    docker compose exec -T api python -m app.import_opensanctions --file /screening-data/entities.ftm.json
+else
+    echo "OpenSanctions import skipped. Put entities.ftm.json in data/opensanctions to enable it."
+fi
+
 open_url "http://localhost:5173"
 open_url "http://localhost:2424/docs"
 open_url "http://localhost:8000/docs"

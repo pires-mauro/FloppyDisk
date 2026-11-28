@@ -1,5 +1,17 @@
--- Apply after 001 and 002. Existing country records are preserved.
-BEGIN;
+-- FloppyDisk: reference data.
+
+INSERT INTO income_ranges (label, lower_bound, upper_bound)
+VALUES
+    ('0-10k',       0,      10000),
+    ('10k-50k',     10000,  50000),
+    ('50k-100k',    50000,  100000),
+    ('100k+',       100000, NULL);
+
+INSERT INTO professional_categories (name)
+VALUES
+    ('Standard'),
+    ('Cash-intensive'),
+    ('High-risk');
 
 INSERT INTO countries (country_code, name) VALUES
     ('AF', 'Afghanistan'),
@@ -194,7 +206,7 @@ INSERT INTO countries (country_code, name) VALUES
     ('VN', 'Vietnam'),
     ('YE', 'Yemen'),
     ('ZM', 'Zambia'),
-    ('ZW', 'Zimbabwe')
-ON CONFLICT (country_code) DO NOTHING;
+    ('ZW', 'Zimbabwe');
 
-COMMIT;
+INSERT INTO sanctions_roles (role, red_flag)
+VALUES ('role.pep', FALSE);

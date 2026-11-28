@@ -1,0 +1,32 @@
+-- Initial settings for the current OpenSanctions topics.
+INSERT INTO sanctions_roles (role, red_flag)
+VALUES
+    ('asset.frozen', FALSE),
+    ('corp.disqual', FALSE),
+    ('crime', FALSE),
+    ('crime.boss', TRUE),
+    ('crime.cyber', FALSE),
+    ('crime.fin', FALSE),
+    ('crime.fraud', FALSE),
+    ('crime.terror', TRUE),
+    ('crime.traffick.drug', FALSE),
+    ('crime.traffick.human', TRUE),
+    ('crime.war', TRUE),
+    ('debarment', FALSE),
+    ('export.control', FALSE),
+    ('forced.labor', TRUE),
+    ('mil', FALSE),
+    ('poi', FALSE),
+    ('reg.action', FALSE),
+    ('reg.warn', FALSE),
+    ('role.diplo', FALSE),
+    ('role.judge', FALSE),
+    ('role.oligarch', FALSE),
+    ('role.pep', FALSE),
+    ('role.pol', FALSE),
+    ('role.rca', FALSE),
+    ('sanction', FALSE),
+    ('sanction.counter', FALSE),
+    ('sanction.linked', FALSE),
+    ('wanted', TRUE)
+ON CONFLICT (role) DO NOTHING;

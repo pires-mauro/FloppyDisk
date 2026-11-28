@@ -178,7 +178,7 @@ Create the root, backend, and frontend `.env` files as described above. Ensure t
 
 IF YOU ARE USING WINDOWS PLEASE HAVE DOCKER DESKTOP INSTALLED AND OPENEND IN THE BACKGROUND
 
-On Windows, double click `start.bat` in the file explorer. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
+On Windows, double click `start.bat` in the file explorer. It builds and starts the services, then opens the frontend in your browser.
 
 On Linux or macOS, run `bash start.sh` from the project root. It builds and starts the services, then opens the frontend and both Swagger pages in your browser.
 
@@ -195,7 +195,41 @@ py apps/api/migrations/apply.py  # Windows
 
 Docker Compose will build application images, download PostgreSQL if needed, and start all configured services. The migration runner applies pending numbered SQL files and records them in `schema_migrations`, so rerunning it skips completed migrations. The `start.bat` and `start.sh` scripts run this migration step automatically after PostgreSQL is ready.
 
-For an existing database created by an earlier version of the startup scripts, the runner detects the current schema and seeded reference data before recording those migrations as applied.
+The development baseline uses `001_schema.sql` for table definitions,
+`002_seed_data.sql` for reference data, `003_default_scoring.sql` for the initial
+scoring configuration, and `004_demo_officers.sql` for local demo accounts.
+The initial scoring configuration has no officer owner. Updates record the
+officer who saves them.
+Development databases created with the previous migration set need a fresh
+PostgreSQL volume to apply this baseline. The runner reports a legacy database
+before attempting to apply the new schema.
+
+### OpenSanctions watchlist data
+
+Download the full `default` dataset in FollowTheMoney JSON format and place it
+at `data/opensanctions/entities.ftm.json` in the project folder. Keep the export
+as a JSON-lines file. If the download is compressed, extract it first.
+[OpenSanctions bulk download instructions](https://www.opensanctions.org/docs/bulk/updates/)
+
+Both startup scripts import the file after applying migrations. Startup skips
+the import when the file is missing or its contents match the last successful
+import. The export is ignored by Git.
+
+To refresh the watchlist, replace the file with a new full export and run the
+startup script again. To refresh an already running stack, run this command
+from the project root after applying migrations:
+
+```bash
+docker compose exec -T api python -m app.import_opensanctions --file /screening-data/entities.ftm.json
+```
+
+The import replaces the watchlist with the contents of the new export.
+If the import fails, PostgreSQL keeps the previous watchlist.
+
+To test role flags in the onboarding API's Swagger UI, select **Authorize**
+and enter an officer ID and password under **OfficerBasic**.
+`GET /api/v1/screening/roles` takes no request body. Administrators can send
+`{"updates":{"role.pep":false}}` to `PUT /api/v1/screening/roles` to update a flag.
 
 Please check the [Local Development URLs](#local-development-urls) to open the application in the browser
 
@@ -337,7 +371,7 @@ The Python services copy their code into their Docker images. Rebuild and recrea
 
 The backend connects to PostgreSQL using `psycopg` and raw parameterized SQL. Officer passwords are verified by the API using salted scrypt hashes stored in `officers.password_hash`. Officers sign in through the web app once; the browser keeps the credentials in memory for the current page session and supplies them automatically when an authenticated action is submitted. They are cleared on logout or page reload and are never stored in browser storage or client snapshots. Weight and risk-value changes additionally require an admin officer.
 
-The local demo officers created by the migrations are:
+The local demo officers created by `004_demo_officers.sql` are:
 
 | Officer     | Internal ID  | Password          | Access           |
 | ----------- | ------------ | ----------------- | ---------------- |
@@ -394,7 +428,7 @@ already-applied migration does not update an existing database: its constraints
 must be updated separately, or the schema recreated on an empty development
 database. Existing configuration values and historical decisions are unchanged.
 
-The default configuration in migration 006 now uses `Scoring_Values.xlsx`:
+The default configuration in `003_default_scoring.sql` uses `Scoring_Values.xlsx`:
 CPI2025 country risk is `5 * (1 - CPI / 100)` for residence, nationality and tax
 domicile. 179 of the application's 193 UN countries have CPI values; the other
 14 trigger manual review with an unavailable score, not a zero/default risk.
@@ -402,25 +436,13 @@ The source's Hong Kong, Taiwan and Kosovo rows are retained in the import but
 excluded from the application's UN-country selections. Income risks are
 2, 1, 1.5, 3 for the four ascending brackets (the BA confirmed the last is
 100k+). Profession risks are Standard 1, Cash-intensive 3.5, High-risk 5.
-Missing CPI does not bypass a PEP/sanctions rejection. Manual review preserves
+Missing CPI does not bypass a confirmed screening red flag. Manual review preserves
 the unavailable score and original configuration version when completed.
-As requested, these changes edit migrations 001 and 006 instead of adding a
-new migration. Already-applied migrations are skipped by the migration runner.
-For an existing development database, explicitly reapply 006 to update the
-required column types/constraints and create a new analyst configuration version
-while keeping prior versions and decisions. In PowerShell from the repo root:
 
-```powershell
-Get-Content -Raw apps/api/migrations/006_default_scoring_configuration.sql | docker compose exec -T db psql -U bank_user -d bank_onboarding -v ON_ERROR_STOP=1
-```
-
-Rebuild the API and critical containers for the corresponding code changes.
-No existing database is reset automatically.
-
-The frontend sends client details to `POST /api/v1/risk/evaluation`. The API
-loads the current configuration, calls `critical`, and returns the score, tier,
-factor breakdown, and configuration version. This
-step writes no client or assessment records to SQL.
+The frontend sends signed-in officer credentials and client details to
+`POST /api/v1/risk/evaluation`. The API loads the current configuration, calls
+`critical`, and returns the score, tier, factor breakdown, and screening candidates.
+This step writes no client or assessment records to SQL.
 
 When the officer submits the final decision, the frontend sends the same client
 details, the signed-in officer credentials, and decision to
@@ -435,22 +457,29 @@ versions are not used. The saved record uses the version actually used for the
 final calculation, including any weights or risk values saved since preview.
 
 For a medium-risk client, submitting "Submit for Manual Review" saves the client
-with a pending manual-review decision. In Client viewing, "Complete review"
-allows an officer to approve or decline it. This calls
-`POST /api/v1/clients/{client_id}/decision`, which checks the saved pending state
-the signed-in officer credentials, then accepts the reviewer's outcome without calling
-`critical` or enforcing an automatic tier decision. It appends a decision record,
+with a pending manual-review decision. In Client viewing, "Complete review" loads
+the client profile, latest saved assessment, risk factors, and screening evidence
+through the authenticated `POST /api/v1/clients/{client_id}/details` endpoint.
+The review screen sends the displayed assessment ID to
+`POST /api/v1/clients/{client_id}/decision` when the officer approves or declines.
+The API checks officer credentials and the pending assessment, and asks the
+reviewer to reload if the assessment changed. It appends a decision record,
 preserving the original scoring version, score, breakdown and initial submission.
 Concurrent or repeated completion is blocked once the pending review is resolved.
 
-No assessment tokens or signing keys are used. No database migration is needed
-for this flow: the existing factor table
-stores the evaluated scores and `input_snapshot.assessment` retains the full
-breakdown and override reason.
+During Risk review, `critical` calls the backend's private screening route
+using a short-lived credential tied to the lookup. The backend searches the
+imported names and aliases in PostgreSQL. It shows dates of birth, nationalities,
+countries, and source datasets when available. A name match with missing
+identifying details remains a candidate for the officer to review.
 
-The temporary PEP/sanctions controls are passed to `critical`, which applies
-their test override and returns its reason. They are placeholders for future
-OpenSanctions screening.
+Officers confirm or dismiss specific candidates through
+`POST /api/v1/risk/screening/confirm`. A confirmed red-flag role requires a
+decline. A confirmed non-red or unclassified role requires manual review unless
+the score already requires a decline. Pending candidates and unavailable
+screening prevent approval or submission to the manual-review queue until
+screening is resolved. Final submission recalculates the result. The saved
+assessment includes the evidence, role flags, dispositions, and export checksum.
 
 ### Scoring-service downtime
 
@@ -479,28 +508,20 @@ client once an hour. When `critical` is available, it appends a confirmed
 recalculation using the original weights version and evaluated factor scores;
 the original preliminary assessment remains in the audit history. If the
 service is unavailable, the preliminary record is left unchanged for the next
-hourly run. When live OpenSanctions screening is added, fallback results must
-continue to indicate that live screening could not be completed.
+hourly run. During fallback the API queries the same screening data directly.
+Reassessment of a saved record uses its saved screening evidence and preserves
+the existing officer decision.
 
 Rebuild both services with `docker compose build api critical`. The Python
 services build from `apps/` using `api/Dockerfile` and `critical/Dockerfile` so
 each image can install `shared`. For direct local development, rerun
 `python -m pip install -r requirements.txt` from each service directory. This
 installs the shared package without changing the services' startup commands.
+For a scoring service run directly outside Docker, set
+`SCREENING_BACKEND_URL=http://localhost:8000` in that service's environment.
 
-As with the earlier changes, existing applied migrations are not rerun. An
-existing database needs the old constraint prohibiting preliminary decisions
-removed before using this feature (no data is deleted):
-
-```sql
-ALTER TABLE risk_assessments
-    DROP CONSTRAINT IF EXISTS risk_assessments_check,
-    DROP CONSTRAINT IF EXISTS risk_assessments_check1,
-    DROP CONSTRAINT IF EXISTS risk_assessments_decision_finalized_check;
-```
-
-The updated migrations 001 and 006 already handle this for a new database or
-when configuration migration 006 is explicitly reapplied.
+The development baseline allows preliminary assessments to retain a final
+officer decision while awaiting confirmation from the scoring service.
 
 This project is under active development as part of a university assignment.
 

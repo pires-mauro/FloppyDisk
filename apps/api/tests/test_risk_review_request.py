@@ -3,7 +3,7 @@ import unittest
 from pydantic import ValidationError
 
 from app.models.client_models import ClientSubmission
-from app.models.risk import RiskReviewRequest
+from app.models.risk import OfficerRiskReviewRequest, RiskReviewRequest
 
 
 CLIENT_DETAILS = {
@@ -25,10 +25,27 @@ CLIENT_DETAILS = {
 
 
 class RiskReviewRequestTests(unittest.TestCase):
-    def test_score_preview_does_not_require_officer_credentials(self):
+    def test_internal_risk_input_does_not_require_officer_credentials(self):
         request = RiskReviewRequest.model_validate(CLIENT_DETAILS)
 
         self.assertEqual(request.clientName, "Example Client")
+
+    def test_screened_risk_review_requires_officer_credentials(self):
+        with self.assertRaises(ValidationError):
+            OfficerRiskReviewRequest.model_validate(CLIENT_DETAILS)
+
+    def test_legacy_frontend_flags_are_ignored(self):
+        request = OfficerRiskReviewRequest.model_validate({
+            **CLIENT_DETAILS,
+            "officerId": "0000000000",
+            "officerPassword": "example",
+            "pepConfirmed": True,
+            "sanctionsMatch": True,
+        })
+
+        self.assertEqual(request.screeningDecisions, {})
+        self.assertNotIn("pepConfirmed", request.model_dump())
+        self.assertNotIn("sanctionsMatch", request.model_dump())
 
     def test_client_submission_still_requires_authenticated_officer_fields(self):
         with self.assertRaises(ValidationError):

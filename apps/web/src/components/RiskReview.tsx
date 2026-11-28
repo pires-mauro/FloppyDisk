@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ClientForm, Country } from '../form/types'
 import type { OfficerSession } from './OfficerLogin'
+import { formatScore, isRiskFactor, isScreening } from '../form/reviewEvidence'
+import type { MatchDecision, RiskFactorResult, Screening } from '../form/reviewEvidence'
+import { RiskFactorTable, ScreeningCandidatesTable } from './ReviewEvidence'
 
 type RiskReviewProps = {
   client: ClientForm
@@ -10,31 +13,15 @@ type RiskReviewProps = {
   onDecisionSaved: (preliminary: boolean) => void
 }
 
-type RiskTier = 'Low Risk' | 'Medium Risk' | 'High Risk'
-
-type RiskFactorResult = {
-  label: string
-  value: string
-  weight: number
-  score: number | null
-  contribution: number | null
-}
-
 type Evaluation = {
   preliminary: boolean
   scoringRuleVersion: string
   score: number | null
-  tier: RiskTier
+  tier: 'Low Risk' | 'Medium Risk' | 'High Risk'
   weightVersion: number | string
   overrideReason: string | null
   factors: RiskFactorResult[]
-}
-
-function formatScore(score: number) {
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(score)
+  screening: Screening
 }
 
 async function getErrorMessage(response: Response) {
@@ -75,6 +62,9 @@ export function RiskReview({
   const [retry, setRetry] = useState(0)
   const [decisionLoading, setDecisionLoading] = useState(false)
   const [decisionError, setDecisionError] = useState('')
+  const [screeningDecisions, setScreeningDecisions] = useState<Record<string, MatchDecision>>({})
+  const screeningPending = !evaluation?.screening.available ||
+    evaluation.screening.candidates.some(({ decision }) => decision === null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -86,11 +76,15 @@ export function RiskReview({
 
       try {
         const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
-        const response = await fetch(`${apiUrl}/v1/risk/evaluation`, {
+        const endpoint = Object.keys(screeningDecisions).length ? 'screening/confirm' : 'evaluation'
+        const response = await fetch(`${apiUrl}/v1/risk/${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...client,
+            officerId: session.officerId,
+            officerPassword: session.password,
+            screeningDecisions,
             address: {
               street: client.addressStreet,
               city: client.addressCity,
@@ -115,7 +109,8 @@ export function RiskReview({
           !('weightVersion' in result) ||
           (typeof result.weightVersion !== 'string' && typeof result.weightVersion !== 'number') ||
           !('tier' in result) ||
-          (result.tier !== 'Low Risk' && result.tier !== 'Medium Risk' && result.tier !== 'High Risk')
+          (result.tier !== 'Low Risk' && result.tier !== 'Medium Risk' && result.tier !== 'High Risk') ||
+          !('screening' in result) || !isScreening(result.screening)
         ) {
           throw new Error('The backend returned an invalid risk score.')
         }
@@ -123,21 +118,7 @@ export function RiskReview({
         const score = result.score
         const factors =
           'factors' in result && Array.isArray(result.factors)
-            ? result.factors.filter(
-                (factor): factor is RiskFactorResult =>
-                  factor !== null &&
-                  typeof factor === 'object' &&
-                  'label' in factor &&
-                  typeof factor.label === 'string' &&
-                  'value' in factor &&
-                  typeof factor.value === 'string' &&
-                  'weight' in factor &&
-                  typeof factor.weight === 'number' &&
-                  'score' in factor &&
-                  (typeof factor.score === 'number' || factor.score === null) &&
-                  'contribution' in factor &&
-                  (typeof factor.contribution === 'number' || factor.contribution === null),
-              )
+            ? result.factors.filter(isRiskFactor)
             : []
         setEvaluation({
           preliminary: result.preliminary,
@@ -152,6 +133,7 @@ export function RiskReview({
               ? result.overrideReason
               : null,
           factors,
+          screening: result.screening,
         })
       } catch (requestError) {
         if (controller.signal.aborted) return
@@ -167,10 +149,10 @@ export function RiskReview({
 
     void loadScore()
     return () => controller.abort()
-  }, [client, retry])
+  }, [client, retry, screeningDecisions, session.officerId, session.password])
 
   async function submitDecision(decision: 'approve' | 'manual_review' | 'decline') {
-    if (!evaluation) return
+    if (!evaluation || loading || (decision !== 'decline' && screeningPending)) return
     setDecisionLoading(true)
     setDecisionError('')
     try {
@@ -182,6 +164,7 @@ export function RiskReview({
           ...client,
           officerId: session.officerId,
           officerPassword: session.password,
+          screeningDecisions,
           address: {
             street: client.addressStreet,
             city: client.addressCity,
@@ -346,36 +329,49 @@ export function RiskReview({
               {` · Rules: ${evaluation.scoringRuleVersion}`}
               {evaluation.overrideReason && ` · Override: ${evaluation.overrideReason}`}
             </p>
-            <div className="risk-preview-table-wrap">
-              <table className="risk-preview-table">
-                <thead>
-                  <tr>
-                    <th>Risk factor</th>
-                    <th>Selected value</th>
-                    <th>Weight</th>
-                    <th>Risk value</th>
-                    <th>Contribution</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evaluation.factors.map((factor) => (
-                    <tr key={factor.label}>
-                      <td>{factor.label}</td>
-                      <td>{factor.value}</td>
-                      <td>{factor.weight}</td>
-                      <td>{factor.score ?? 'CPI unavailable'}</td>
-                      <td>{factor.contribution?.toFixed(2) ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <RiskFactorTable factors={evaluation.factors} />
             <p className="risk-score-status">
               Score and risk-tier classification supplied by the backend using {evaluation.preliminary ? 'cached rules' : 'the scoring service'}.
             </p>
           </>
         )}
       </section>
+
+      {evaluation && (
+        <section className="data-view-card weight-editor" aria-labelledby="screening-title">
+          <div className="weight-editor-heading">
+            <div>
+              <h3 id="screening-title">OpenSanctions screening</h3>
+              <p>Compare the watchlist evidence with the client details before confirming a match.</p>
+            </div>
+          </div>
+          {!evaluation.screening.available ? (
+            <div className="data-view-alert" role="status">
+              <strong>Screening unavailable</strong>
+              <span>Check that the watchlist has been imported, then try again.</span>
+              <button type="button" className="retry-button" onClick={() => setRetry((attempt) => attempt + 1)}>
+                Retry screening
+              </button>
+            </div>
+          ) : evaluation.screening.candidates.length === 0 ? (
+            <p className="data-view-note">The watchlist returned no name or alias match.</p>
+          ) : (
+            <ScreeningCandidatesTable
+              candidates={evaluation.screening.candidates}
+              disabled={loading || decisionLoading}
+              onDecisionChange={(entityId, decision) => {
+                setDecisionError('')
+                setScreeningDecisions((current) => {
+                  const next = { ...current }
+                  if (decision) next[entityId] = decision
+                  else delete next[entityId]
+                  return next
+                })
+              }}
+            />
+          )}
+        </section>
+      )}
 
       <section className="decision-panel" aria-labelledby="decision-title">
         <div>
@@ -401,7 +397,7 @@ export function RiskReview({
           <button
             type="button"
             className="decision-button approve"
-            disabled={!evaluation || evaluation.tier !== 'Low Risk' || decisionLoading}
+            disabled={!evaluation || evaluation.tier !== 'Low Risk' || screeningPending || decisionLoading}
             onClick={() => void submitDecision('approve')}
           >
             Approve
@@ -409,7 +405,7 @@ export function RiskReview({
           <button
             type="button"
             className="decision-button manual-review"
-            disabled={!evaluation || evaluation.tier !== 'Medium Risk' || decisionLoading}
+            disabled={!evaluation || evaluation.tier !== 'Medium Risk' || screeningPending || decisionLoading}
             onClick={() => void submitDecision('manual_review')}
           >
             Submit for Manual Review

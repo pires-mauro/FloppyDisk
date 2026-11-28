@@ -2,7 +2,9 @@ import logging
 
 from fastapi import HTTPException
 from psycopg.types.json import Jsonb
+from onboarding_shared.screening import ScreeningResult, screening_outcome
 
+from app.db.clients import copy_assessment_roles
 from app.db.connection import get_connection
 from app.models.risk import RiskFactorResult, RiskReviewResponse
 from app.router import RISK_FACTORS, RiskServiceUnavailable, _call_risk_service
@@ -55,6 +57,14 @@ def recalculate_preliminary_assessments() -> int:
     for assessment_id in assessment_ids:
         try:
             with get_connection() as conn:
+                # Use the same client lock and order as manual decisions. Read
+                # the latest assessment only after acquiring it.
+                locked_client = conn.execute('''
+                    SELECT c.id FROM clients c JOIN risk_assessments a ON a.client_id = c.id
+                    WHERE a.id = %s FOR NO KEY UPDATE OF c SKIP LOCKED
+                ''', (assessment_id,)).fetchone()
+                if locked_client is None:
+                    continue
                 row = conn.execute(
                     LOCK_PRELIMINARY_QUERY, (assessment_id,)
                 ).fetchone()
@@ -98,7 +108,14 @@ def recalculate_preliminary_assessments() -> int:
                     for factor in factors if factor.score is None
                 ]
                 override_reason = calculation.overrideReason
-                if missing_cpi and calculation.tier == "Medium Risk":
+                previous_assessment = snapshot.get("assessment") or {}
+                stored_screening = previous_assessment.get("screening")
+                screening = ScreeningResult.model_validate(stored_screening) if stored_screening is not None else None
+                if screening is not None:
+                    calculation.tier, override_reason = screening_outcome(
+                        calculation.tier, override_reason, screening,
+                    )
+                if missing_cpi and override_reason and override_reason.startswith("Missing CPI:"):
                     override_reason = (
                         f"Missing CPI: {', '.join(missing_cpi)}; manual review required"
                     )
@@ -112,6 +129,7 @@ def recalculate_preliminary_assessments() -> int:
                     weightVersion=str(row[5]),
                     overrideReason=override_reason,
                     factors=factors,
+                    screening=screening,
                 )
                 snapshot["assessment"] = assessment.model_dump(mode="json")
                 snapshot["automaticReassessment"] = {
@@ -144,6 +162,7 @@ def recalculate_preliminary_assessments() -> int:
                     """,
                     (new_id, *(factor.score for factor in assessment.factors)),
                 )
+                copy_assessment_roles(conn, assessment_id, new_id)
                 recalculated += 1
         except (RiskServiceUnavailable, HTTPException) as exc:
             logger.warning(
